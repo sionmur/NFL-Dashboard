@@ -1,0 +1,1814 @@
+<!DOCTYPE html>
+<html lang="nl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>NFL Matchup Terminal</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Oswald:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #eef1f5;          /* licht grijs papier */
+    --panel: #ffffff;
+    --panel-2: #f4f6f9;     /* subtiele vulling: koppen, velden */
+    --line: #d6dde6;
+    --text: #10161f;        /* inkt */
+    --dim: #61728a;
+    --accent: #b45309;      /* amber, donker genoeg voor wit */
+    --accent-soft: rgba(180,83,9,0.10);
+    --green: #15803d;
+    --red: #c81e1e;
+    --blue: #1d4ed8;
+    --shadow: 0 1px 2px rgba(16,22,31,0.06), 0 1px 8px rgba(16,22,31,0.04);
+    --team: #61728a;        /* wordt per team overschreven */
+    --team2: #10161f;
+    --mono: 'JetBrains Mono', monospace;
+    --display: 'Oswald', sans-serif;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: var(--mono);
+    font-size: 14px;
+    line-height: 1.5;
+    background-image: radial-gradient(circle at 20% 0%, rgba(245,197,24,0.04), transparent 40%),
+                      radial-gradient(circle at 80% 100%, rgba(88,166,255,0.04), transparent 40%);
+    min-height: 100vh;
+  }
+  header {
+    border-bottom: 2px solid var(--accent);
+    padding: 18px 28px;
+    display: flex;
+    align-items: baseline;
+    gap: 16px;
+    background: linear-gradient(180deg, rgba(245,197,24,0.06), transparent);
+  }
+  .scorebox { margin-left: auto; display: flex; align-items: center; gap: 14px; align-self: center; }
+  .score-item { display: flex; flex-direction: column; align-items: center; gap: 3px; }
+  .score-label { font-size: 9px; text-transform: uppercase; letter-spacing: 1px; color: var(--dim); }
+  .score-item.good .score-label { color: var(--green); }
+  .score-item.bad .score-label { color: var(--red); }
+  .score-ctrl { display: flex; align-items: center; gap: 6px; }
+  .score-ctrl button { width: 20px; height: 20px; border-radius: 4px; border: 1px solid var(--line); background: var(--panel-2); color: var(--text); font-family: var(--mono); cursor: pointer; line-height: 1; padding: 0; }
+  .score-ctrl button:hover { border-color: var(--accent); color: var(--accent); }
+  .score-ctrl span { font-family: var(--display); font-weight: 700; font-size: 20px; min-width: 24px; text-align: center; }
+  .score-item.good .score-ctrl span { color: var(--green); }
+  .score-item.bad .score-ctrl span { color: var(--red); }
+  .score-pct { font-family: var(--display); font-weight: 700; font-size: 18px; color: var(--accent); min-width: 42px; text-align: center; }
+  .score-reset { background: none; border: 1px solid var(--line); color: var(--dim); border-radius: 5px; padding: 3px 8px; font-family: var(--mono); font-size: 10px; text-transform: uppercase; letter-spacing: 0.5px; cursor: pointer; }
+  .score-reset:hover { border-color: var(--red); color: var(--red); }
+  .score-pct { font-family: var(--mono); font-size: 13px; color: var(--dim); padding-left: 8px; border-left: 1px solid var(--line); }
+  /* Speler-overlay */
+  .modal-overlay { position: fixed; inset: 0; z-index: 5000; background: rgba(5,8,12,0.75); backdrop-filter: blur(3px); display: none; align-items: flex-start; justify-content: center; padding: 40px 20px; overflow-y: auto; }
+  .modal-overlay.show { display: flex; }
+  .modal-box { background: var(--panel); border: 1px solid var(--accent); border-radius: 14px; width: 100%; max-width: 680px; box-shadow: 0 20px 60px rgba(0,0,0,0.5); }
+  .modal-head { display: flex; justify-content: space-between; align-items: center; padding: 18px 22px; border-bottom: 1px solid var(--line); background: var(--panel-2); border-radius: 14px 14px 0 0; }
+  .modal-head h2 { font-family: var(--display); font-weight: 700; font-size: 22px; text-transform: uppercase; letter-spacing: 1px; }
+  .modal-head .close { background: none; border: 1px solid var(--line); color: var(--dim); width: 32px; height: 32px; border-radius: 6px; cursor: pointer; font-size: 16px; }
+  .modal-head .close:hover { border-color: var(--red); color: var(--red); }
+  .modal-body { padding: 20px 22px; }
+  .modal-section { margin-bottom: 22px; }
+  .modal-section h3 { font-family: var(--display); font-weight: 600; font-size: 13px; text-transform: uppercase; letter-spacing: 1px; color: var(--accent); margin-bottom: 10px; padding-bottom: 6px; border-bottom: 1px solid var(--line); }
+  .stat-grid { display: grid; grid-template-columns: repeat(auto-fit,minmax(90px,1fr)); gap: 12px; }
+  .stat-cell { background: var(--panel-2); border: 1px solid var(--line); border-radius: 8px; padding: 10px 12px; text-align: center; }
+  .stat-cell .v { font-family: var(--display); font-weight: 700; font-size: 22px; }
+  .stat-cell .k { font-size: 10px; text-transform: uppercase; letter-spacing: 0.5px; color: var(--dim); margin-top: 2px; }
+  .clickable-name { cursor: pointer; }
+  .clickable-name:hover { color: var(--accent); text-decoration: underline; }
+  .filter-head { display: flex; align-items: center; gap: 18px; margin-bottom: 20px; flex-wrap: wrap; }
+  .filter-head h2 { font-family: var(--display); font-weight: 700; font-size: 24px; text-transform: uppercase; letter-spacing: 1px; }
+  .back-btn { background: var(--panel-2); border: 1px solid var(--accent); color: var(--accent); font-weight: 600; }
+  .back-btn:hover { background: var(--accent); color: var(--bg); }
+  .filter-box { max-width: 760px; }
+  .compare-grid { display: grid; grid-template-columns: minmax(0,1fr) minmax(0,1fr); gap: 18px; align-items: start; }  .compare-grid .filter-box { max-width: none; }
+  .warn-band { background: rgba(230,160,60,0.10); border: 1px solid rgba(230,160,60,0.45); border-left: 3px solid #e6a03c; color: #e8c99a; border-radius: 6px; padding: 10px 12px; font-size: 12px; line-height: 1.5; margin-bottom: 16px; }
+  .warn-band b { color: #f0b862; }
+  .ctx-unit { font-size: 11px; font-weight: 500; color: var(--dim); margin-left: 3px; letter-spacing: 0; }
+  /* speler × situatie / coverage — receptions als groot getal met een teambalk
+     erachter (volume), de kleur van het getal = yds/rec t.o.v. het competitie-
+     gemiddelde (groen = efficiënter, rood = minder). Zo zie je het volume-profiel
+     en de uitschieters in één oogopslag. Balk + trend-kleuren = bestaande stijl. */
+  td.pv { position: relative; text-align: center; white-space: nowrap; padding: 6px 8px; }
+  td.pv .n  { position: relative; z-index: 1; font-family: var(--display); font-weight: 700; font-size: 15px; }
+  td.pv .yr { position: relative; z-index: 1; display: block; font-size: 10px; color: var(--dim); margin-top: 1px; letter-spacing: 0; }
+  td.pv.dash { color: var(--line); }
+  td.pv.thin .n  { color: var(--dim); font-weight: 600; }
+  td.pv.thin .yr { opacity: 0.5; }
+  td.pv .n.trend-up   { color: var(--green); }
+  td.pv .n.trend-down { color: var(--red); }
+  th.pv-h { text-align: center; }
+  .roster-badge { display:inline-block; margin-left:6px; padding:1px 6px; border-radius:4px; font-size:10px; font-family:var(--mono); background:rgba(230,160,60,0.15); color:#e6a03c; border:1px solid rgba(230,160,60,0.4); vertical-align:middle; }
+  .cmp-sel { background: var(--panel-2); color: var(--text); border: 1px solid var(--line); border-radius: 6px; padding: 8px 10px; font-family: var(--mono); font-size: 13px; cursor: pointer; }
+  .cmp-sel:focus { outline: none; border-color: var(--accent); }
+  #playerSearch { background: var(--panel-2); color: var(--text); border: 1px solid var(--line); border-radius: 6px; padding: 9px 12px; font-family: var(--mono); font-size: 14px; min-width: 150px; }
+  #playerSearch:focus { outline: none; border-color: var(--accent); }
+  header h1 {
+    font-family: var(--display);
+    font-weight: 700;
+    font-size: 26px;
+    letter-spacing: 1px;
+    text-transform: uppercase;
+  }
+  header h1 .accent { color: var(--accent); }
+  header .sub { color: var(--dim); font-size: 12px; letter-spacing: 0.5px; }
+  .wrap { max-width: 1300px; margin: 0 auto; padding: 24px 28px 60px; }
+
+  .controls {
+    display: flex; gap: 14px; flex-wrap: wrap; align-items: flex-end;
+    margin-bottom: 24px; padding: 18px; background: var(--panel);
+    border: 1px solid var(--line); border-radius: 10px;
+  }
+  .ctrl label {
+    display: block; font-size: 10px; text-transform: uppercase;
+    letter-spacing: 1px; color: var(--dim); margin-bottom: 6px;
+  }
+  select {
+    background: var(--panel-2); color: var(--text); border: 1px solid var(--line);
+    border-radius: 6px; padding: 9px 12px; font-family: var(--mono); font-size: 14px;
+    min-width: 150px; cursor: pointer;
+  }
+  select:focus { outline: none; border-color: var(--accent); }
+
+  .matchup-head {
+    display: grid; grid-template-columns: 1fr auto 1fr; gap: 20px;
+    align-items: center; margin-bottom: 22px;
+  }
+  .team-badge {
+    font-family: var(--display); font-weight: 700; font-size: 32px;
+    text-transform: uppercase; letter-spacing: 1px; text-align: center;
+    padding: 16px; background: var(--panel); border: 1px solid var(--line);
+    border-radius: 10px;
+  }
+  .vs { font-family: var(--display); color: var(--accent); font-size: 20px; }
+
+  .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
+  @media (max-width: 900px) { .grid2 { grid-template-columns: 1fr; } }
+
+  .panel {
+    background: var(--panel); border: 1px solid var(--line);
+    border-radius: 10px; overflow: hidden; margin-bottom: 20px;
+  }
+  .panel h2 {
+    font-family: var(--display); font-weight: 600; font-size: 15px;
+    text-transform: uppercase; letter-spacing: 1px; padding: 13px 16px;
+    border-bottom: 1px solid var(--line); background: var(--panel-2);
+    display: flex; justify-content: space-between; align-items: center;
+  }
+  .panel h2 .tag { font-family: var(--mono); font-size: 10px; color: var(--dim);
+    font-weight: 400; letter-spacing: 0.5px; }
+
+  table { width: 100%; border-collapse: collapse; }
+  th, td { padding: 8px 10px; text-align: right; border-bottom: 1px solid var(--line); }
+  th:first-child, td:first-child { text-align: left; }
+  th {
+    font-size: 10px; text-transform: uppercase; letter-spacing: 0.5px;
+    color: var(--dim); font-weight: 500; cursor: pointer; user-select: none;
+    position: sticky; top: 0; background: var(--panel-2);
+  }
+  th:hover { color: var(--accent); }
+  tbody tr:hover { background: rgba(245,197,24,0.04); }
+  td.player-name { font-weight: 500; }
+  td .pos {
+    display: inline-block; font-size: 9px; padding: 1px 5px; border-radius: 3px;
+    background: var(--panel-2); color: var(--dim); margin-left: 6px;
+    border: 1px solid var(--line); vertical-align: middle;
+  }
+  .bar-cell { position: relative; }
+  .bar {
+    position: absolute; left: 0; top: 0; bottom: 0;
+    background: rgba(245,197,24,0.13); z-index: 0;
+  }
+  .bar-cell span { position: relative; z-index: 1; }
+
+  .trend-up { color: var(--green); }
+  .trend-down { color: var(--red); }
+  .dim { color: var(--dim); }
+  .out { color: var(--red); font-weight: 700; }
+  .quest { color: var(--accent); }
+
+  .rank-pill {
+    display: inline-block; min-width: 26px; text-align: center; padding: 2px 6px;
+    border-radius: 4px; font-size: 11px; font-weight: 700;
+  }
+  .rank-bad  { background: rgba(248,81,73,0.16); color: var(--red); }      /* staat veel toe */
+  .rank-mid  { background: rgba(139,155,176,0.14); color: var(--dim); }
+  .rank-good { background: rgba(63,185,80,0.16); color: var(--green); }    /* sterke defense */
+
+  .empty { padding: 30px; text-align: center; color: var(--dim); }
+  .legend { font-size: 11px; color: var(--dim); margin: 4px 2px 18px; line-height: 1.7; }
+  .legend b { color: var(--text); }
+  .note {
+    font-size: 11px; color: var(--dim); padding: 10px 16px;
+    border-top: 1px dashed var(--line); background: rgba(0,0,0,0.15);
+  }
+  .hint { color: var(--accent); }
+
+  .cov-block { padding: 14px 16px; border-bottom: 1px solid var(--line); }
+  .cov-head { font-size: 11px; text-transform: uppercase; letter-spacing: 0.5px; color: var(--dim); margin-bottom: 10px; }
+  .cov-row { display: grid; grid-template-columns: 110px 1fr 42px; align-items: center; gap: 10px; margin-bottom: 6px; }
+  .cov-label { font-size: 12px; color: var(--text); }
+  .cov-track { height: 10px; background: var(--panel-2); border-radius: 5px; overflow: hidden; }
+  .cov-fill { height: 100%; border-radius: 5px; }
+  .cov-val { font-size: 12px; text-align: right; color: var(--dim); }
+  .cov-split { display: flex; gap: 16px; margin-top: 10px; font-size: 12px; }
+  .blue-t { color: var(--blue); }
+
+  .nbadge { font-size: 9px; padding: 1px 4px; border-radius: 3px; background: var(--panel-2);
+    color: var(--dim); border: 1px solid var(--line); margin-left: 2px; }
+  .nbadge.ok { color: var(--green); border-color: rgba(63,185,80,0.3); }
+  .thin { color: var(--dim); }
+  .ok-t { color: var(--green); }
+  .thin-t { color: var(--dim); }
+  .mu-good { color: var(--green); font-weight:700; }
+  .mu-bad { color: var(--red); font-weight:700; }
+  .mu-good-t { color: var(--green); }
+  .mu-bad-t { color: var(--red); }
+
+  .odds { border-color: rgba(88,166,255,0.3); }
+  .ou { background: var(--panel-2); color: var(--dim); border:1px solid var(--line); border-radius:5px; padding:4px 7px; font-family:var(--mono); font-size:11px; cursor:pointer; margin-right:3px; }
+  .ou:hover { border-color: var(--blue); color: var(--blue); }
+  .ou.sel { background: var(--blue); color:#0a0e14; border-color:var(--blue); font-weight:700; }
+  .btn-sm { background: var(--accent); color:#0a0e14; border:none; border-radius:5px; padding:4px 9px; font-family:var(--mono); font-size:11px; font-weight:700; cursor:pointer; }
+  .btn-sm:hover { opacity:0.85; }
+
+  .toolbar { display:flex; gap:10px; margin: 0 0 18px; flex-wrap:wrap; }
+  .btn { background: var(--panel-2); color: var(--text); border:1px solid var(--line); border-radius:6px; padding:8px 14px; font-family:var(--mono); font-size:12px; cursor:pointer; }
+  .btn:hover { border-color: var(--accent); color: var(--accent); }
+  .chk { display:flex; align-items:center; gap:6px; font-size:12px; color:var(--dim); cursor:pointer; }
+  @media print { .controls,.toolbar{display:none;} body{background:#fff;color:#000;} .panel{break-inside:avoid;} }
+
+  .spark { display: block; }
+  .vac { border-color: rgba(248,81,73,0.3); }
+  .vac-head { padding: 12px 16px; font-size: 13px; border-bottom: 1px solid var(--line);
+    background: rgba(248,81,73,0.06); }
+  .vac-head b { color: var(--red); }
+  .vac-sub { padding: 10px 16px 4px; font-size: 11px; text-transform: uppercase;
+    letter-spacing: 0.5px; color: var(--dim); }
+
+
+  #splash {
+    position: fixed; inset: 0; z-index: 9999; background: var(--bg);
+    display: flex; align-items: center; justify-content: center;
+    background-image: radial-gradient(circle at 50% 40%, rgba(245,197,24,0.08), transparent 55%);
+    transition: opacity 0.5s ease; 
+  }
+  #splash.hide { opacity: 0; pointer-events: none; }
+  .splash-inner { text-align: center; }
+  .splash-logo {
+    font-family: var(--display); font-weight: 700; font-size: 34px;
+    letter-spacing: 2px; text-transform: uppercase; margin-bottom: 22px;
+  }
+  .splash-bar {
+    width: 220px; height: 4px; background: var(--panel-2, #1a222f);
+    border-radius: 3px; overflow: hidden; margin: 0 auto 14px;
+  }
+  .splash-fill {
+    height: 100%; width: 40%; background: var(--accent); border-radius: 3px;
+    animation: splashLoad 1.1s ease-in-out infinite;
+  }
+  @keyframes splashLoad {
+    0% { margin-left: -40%; } 100% { margin-left: 100%; }
+  }
+  .splash-msg {
+    font-family: var(--mono); font-size: 12px; color: var(--dim, #8b9bb0);
+    letter-spacing: 0.5px;
+  }
+  /* Signaal-badges bij spelers */
+  .sig { font-size: 9px; padding: 1px 5px; border-radius: 3px; margin-left: 5px; font-weight: 700; letter-spacing: 0.3px; vertical-align: middle; }
+  .sig-snap { background: rgba(88,166,255,0.18); color: var(--blue); }
+  .sig-form { background: rgba(63,185,80,0.18); color: var(--green); }
+  .sig-def  { background: rgba(245,197,24,0.18); color: var(--accent); }
+  tr.row-hot { background: rgba(245,197,24,0.06); box-shadow: inset 2px 0 0 var(--accent); }
+  /* Samenvattingsbalk */
+  .summary { background: linear-gradient(180deg, rgba(245,197,24,0.07), rgba(245,197,24,0.02)); border: 1px solid var(--line); border-left: 3px solid var(--accent); border-radius: 10px; padding: 14px 18px; margin-bottom: 20px; }
+  .summary-head { font-family: var(--display); font-weight: 600; font-size: 14px; text-transform: uppercase; letter-spacing: 1px; color: var(--accent); margin-bottom: 8px; }
+  .summary ul { margin: 0 0 8px; padding-left: 18px; }
+  .summary li { font-size: 13px; margin-bottom: 4px; line-height: 1.5; }
+  .summary-foot { font-size: 11px; color: var(--dim); border-top: 1px dashed var(--line); padding-top: 8px; }
+  .summary-quiet { color: var(--dim); font-size: 13px; }
+  /* Sorteerbare kolomkoppen */
+  th.sortable { cursor: pointer; user-select: none; }
+  th.sortable:hover { color: var(--accent); }
+
+
+  /* ============================================================
+     LICHT THEMA — aanvullingen op de tokens hierboven.
+     Uitgangspunt: de chrome is neutraal (papier + inkt), zodat de
+     teamkleuren en de groen/rood-signalen het werk doen.
+     ============================================================ */
+  body {
+    background-image:
+      radial-gradient(circle at 15% -5%, rgba(29,78,216,0.05), transparent 45%),
+      radial-gradient(circle at 85% 105%, rgba(180,83,9,0.05), transparent 45%);
+  }
+  header {
+    background: #ffffff;
+    border-bottom: 1px solid var(--line);
+    box-shadow: var(--shadow);
+  }
+  .panel, .controls { box-shadow: var(--shadow); }
+  .note { background: rgba(16,22,31,0.025); }
+  .bar { background: color-mix(in srgb, var(--team) 16%, transparent); }
+  tbody tr:hover { background: color-mix(in srgb, var(--team) 7%, transparent); }
+  .ou.sel { color: #fff; }
+  .btn-sm { color: #fff; }
+  .cov-track { background: #e6ebf1; }
+  #splash { background: var(--bg); }
+  .modal-box {
+    border: 1px solid var(--line); border-top: 3px solid var(--team);
+    box-shadow: 0 4px 24px rgba(16,22,31,0.10);
+  }
+  .modal-head { background: color-mix(in srgb, var(--team) 8%, #fff); color: var(--team2); }
+  .summary {
+    background: #fff; border: 1px solid var(--line);
+    border-left: 3px solid var(--accent); box-shadow: var(--shadow);
+  }
+
+  /* signaalkleuren dragen meer gewicht op licht */
+  .rank-bad  { background: rgba(200,30,30,0.12);  color: var(--red); }
+  .rank-good { background: rgba(21,128,61,0.12);  color: var(--green); }
+  .rank-mid  { background: rgba(97,114,138,0.12); color: var(--dim); }
+  .nbadge.ok { color: var(--green); border-color: rgba(21,128,61,0.35); }
+  .warn-band {
+    background: rgba(180,83,9,0.07); border: 1px solid rgba(180,83,9,0.30);
+    border-left: 3px solid var(--accent); color: #6b3d0a;
+  }
+  .warn-band b { color: var(--accent); }
+  .roster-badge {    background: rgba(180,83,9,0.10); color: var(--accent);
+    border: 1px solid rgba(180,83,9,0.30);
+  }
+  .vac-head { background: rgba(200,30,30,0.05); }
+
+  /* ============================================================
+     TEAMKLEUREN — elk paneel staat in een .team-scope die
+     --team en --team2 zet. De kop krijgt de kleur van dat team,
+     zodat je in één oogopslag ziet over wie een paneel gaat.
+     ============================================================ */
+  .team-scope .panel { border-top: 3px solid var(--team); }
+  .team-scope .panel > h2 {
+    background: color-mix(in srgb, var(--team) 9%, #fff);
+    border-bottom-color: color-mix(in srgb, var(--team) 22%, var(--line));
+    color: var(--team2);
+  }
+  .team-scope .panel > h2::before {
+    content: ''; width: 8px; height: 8px; border-radius: 2px;
+    background: var(--team); margin-right: 9px; flex: none;
+  }
+  .team-scope .panel > h2 { justify-content: flex-start; gap: 0; }
+  .team-scope .panel > h2 .tag { margin-left: auto; padding-left: 12px; }
+  .team-scope .cov-fill { background: var(--team) !important; }
+
+  /* ============================================================
+     TEAMBADGE met logo
+     ============================================================ */
+  .team-badge {
+    display: flex; flex-direction: column; align-items: center; gap: 8px;
+    background: #fff; border-top: 3px solid var(--team);
+    box-shadow: var(--shadow); color: var(--team2); padding: 14px 16px;
+  }
+  .team-logo { width: 54px; height: 54px; object-fit: contain; display: block; }
+  .team-logo.missing { display: none; }
+  .team-badge .team-code { line-height: 1; }
+  .vs { color: var(--dim); font-weight: 600; }
+
+  /* klein logo naast een paneelkop */
+  .panel h2 .h2-logo { width: 20px; height: 20px; object-fit: contain; margin-right: 8px; }
+  .panel h2 .h2-logo.missing { display: none; }
+
+  @media (prefers-reduced-motion: reduce) { * { animation: none !important; transition: none !important; } }
+
+</style>
+</head>
+<body>
+<div id="splash">
+  <div class="splash-inner">
+    <div class="splash-logo">NFL <span class="accent">Matchup</span> Terminal</div>
+    <div class="splash-bar"><div class="splash-fill"></div></div>
+    <div class="splash-msg" id="splashMsg">data laden…</div>
+  </div>
+</div>
+<header>
+  <h1>NFL <span class="accent">Matchup</span> Terminal</h1>
+  <span class="sub" id="seasonInfo">data laden…</span>
+  <div class="scorebox" id="scorebox">
+    <div class="score-item good">
+      <span class="score-label">goed</span>
+      <div class="score-ctrl"><button onclick="bumpScore('good',-1)">&minus;</button><span id="scoreGood">0</span><button onclick="bumpScore('good',1)">+</button></div>
+    </div>
+    <div class="score-item bad">
+      <span class="score-label">fout</span>
+      <div class="score-ctrl"><button onclick="bumpScore('bad',-1)">&minus;</button><span id="scoreBad">0</span><button onclick="bumpScore('bad',1)">+</button></div>
+    </div>
+    <div class="score-pct" id="scorePct">&ndash;</div>
+    <button class="score-reset" onclick="resetScore()" title="Score op nul zetten">reset</button>
+  </div>
+</header>
+<div class="wrap">
+  <div id="app">
+    <div class="empty">Data laden… als dit blijft staan, controleer of <b>dashboard_data.js</b> in dezelfde map staat.</div>
+  </div>
+</div>
+<!-- Laadt elk seizoen dat aanwezig is; ontbrekende bestanden worden genegeerd -->
+<script src="dashboard_data_2020.js" onerror="void 0"></script>
+<script src="dashboard_data_2021.js" onerror="void 0"></script>
+<script src="dashboard_data_2022.js" onerror="void 0"></script>
+<script src="dashboard_data_2023.js" onerror="void 0"></script>
+<script src="dashboard_data_2024.js" onerror="void 0"></script>
+<script src="dashboard_data_2025.js" onerror="void 0"></script>
+<script src="dashboard_data_2026.js" onerror="void 0"></script>
+<script src="dashboard_data_2027.js" onerror="void 0"></script>
+<script src="dashboard_data_2028.js" onerror="void 0"></script>
+<script src="dashboard_data_2029.js" onerror="void 0"></script>
+<script src="dashboard_data_2030.js" onerror="void 0"></script>
+<script>
+let D = null;
+
+function mean(a){ return a.length ? a.reduce((x,y)=>x+y,0)/a.length : 0; }
+function n(v){ const x = parseFloat(v); return isNaN(x)?0:x; }
+function fmt(v,d=0){ return (v===null||v===undefined||isNaN(v))?'\u2013':Number(v).toFixed(d); }
+function wkLbl(w){ return w>1 ? `t/m week ${w-1}` : 'week 1 \u2014 geen voorgaande data'; }
+
+// ============================================================
+//  CUMULATIEVE AGGREGATIE TOT EN MET GEKOZEN WEEK (geen leakage)
+// ============================================================
+let _weekCache = {};
+let windowWeeks = 0;   // 0 = alles tot nu (cumulatief); >0 = alleen de laatste N weken (telt door over seizoenen)
+const SEASON_WEEKS = 18; // reguliere seizoensweken, voor het doortellen over jaargrenzen
+
+// Verzamel rijen voor een tabel, met data STRIKT vóór week W (geen leakage).
+// Als windowWeeks>0: alleen de laatste N weken, doortellend naar het vorige seizoen (indien geladen).
+// Elke rij krijgt _gw (globale, doorlopende week) zodat 'games' correct telt over seizoenen heen.
+function _rowsFor(table, W){
+  // Huidig seizoen: weken < W. Globale week = week.
+  let cur = (D[table]||[]).filter(r=>r.week<W).map(r=>{ const o=Object.assign({},r); o._gw=r.week; return o; });
+  if(windowWeeks<=0){
+    return cur;   // alles tot nu = alleen huidig seizoen, cumulatief
+  }
+  // Venster actief: neem ook vorig seizoen mee (globale week = week - SEASON_WEEKS) en knip op het venster
+  const prev = window.NFL_SEASONS[String((D.season||0)-1)];
+  let prevRows = [];
+  if(prev){
+    prevRows = (prev[table]||[]).map(r=>{ const o=Object.assign({},r); o._gw=r.week-SEASON_WEEKS; return o; });
+  }
+  let all = prevRows.concat(cur);
+  const minGw = (W-1) - (windowWeeks-1);
+  return all.filter(r=>r._gw>=minGw && r._gw<=W-1);
+}
+
+function buildWeekData(W){
+  const ck = W + '_' + windowWeeks;
+  if(_weekCache[ck]) return _weekCache[ck];
+  const wd = {};
+
+  // ---- team-defense vs positie ----
+  const td={};
+  _rowsFor('team_def_weekly',W).forEach(r=>{
+    const t=(td[r.team]=td[r.team]||{});
+    const p=(t[r.vs_pos]=t[r.vs_pos]||{rec_yds:0,rec:0,targets:0,rush_yds:0,weeks:new Set()});
+    p.rec_yds+=n(r.rec_yds); p.rec+=n(r.rec); p.targets+=n(r.targets); p.rush_yds+=n(r.rush_yds); p.weeks.add(r._gw);
+  });
+  Object.values(td).forEach(t=>Object.values(t).forEach(p=>{
+    const g=p.weeks.size||1; p.games=g; p.rec_yds_pg=p.rec_yds/g; p.rec_pg=p.rec/g; p.rush_yds_pg=p.rush_yds/g;
+  }));
+  ["WR","TE","RB","QB"].forEach(pos=>{
+    const arr=Object.entries(td).filter(([t,o])=>o[pos]).map(([t,o])=>({t,v:o[pos].rec_yds_pg,r:o[pos].rush_yds_pg}));
+    arr.slice().sort((a,b)=>b.v-a.v).forEach((e,i)=>{ td[e.t][pos].rec_yds_rank=i+1; });
+    arr.slice().sort((a,b)=>b.r-a.r).forEach((e,i)=>{ td[e.t][pos].rush_yds_rank=i+1; });
+  });
+  wd.teamDef=td;
+
+  // ---- def positiegroep ----
+  const dp={};
+  _rowsFor('def_pos_weekly',W).forEach(r=>{
+    const t=(dp[r.team]=dp[r.team]||{});
+    const g=(t[r.group]=t[r.group]||{targets:0,yards:0,cmp:0,prsum:0,prn:0,weeks:new Set()});
+    g.targets+=n(r.targets); g.yards+=n(r.yards_allowed); g.cmp+=n(r.cmp);
+    g.prsum+=n(r.prating_sum); g.prn+=n(r.prating_n); g.weeks.add(r._gw);
+  });
+  Object.values(dp).forEach(t=>Object.values(t).forEach(g=>{
+    const games=g.weeks.size||1; g.games=games; g.yards_pg=g.yards/games; g.targets_pg=g.targets/games;
+    g.passer_rating=g.prn?g.prsum/g.prn:null;
+  }));
+  ["CB","LB","S"].forEach(grp=>{
+    const arr=Object.entries(dp).filter(([t,o])=>o[grp]).map(([t,o])=>({t,v:o[grp].yards_pg}));
+    arr.sort((a,b)=>b.v-a.v).forEach((e,i)=>{ dp[e.t][grp].yards_rank=i+1; });
+  });
+  wd.defPos=dp;
+
+  // ---- coverage-mix ----
+  const cp={};
+  _rowsFor('def_profile_weekly',W).forEach(r=>{
+    const c=(cp[r.team]=cp[r.team]||{total:0,man:0,zone:0,box_sum:0,box_n:0,COVER_0:0,COVER_1:0,COVER_2:0,COVER_3:0,COVER_4:0,COVER_6:0,"2_MAN":0,COVER_9:0});
+    c.total+=n(r.total); c.man+=n(r.man); c.zone+=n(r.zone); c.box_sum+=n(r.box_sum); c.box_n+=n(r.box_n);
+    ["COVER_0","COVER_1","COVER_2","COVER_3","COVER_4","COVER_6","2_MAN","COVER_9"].forEach(k=>c[k]+=n(r[k]));
+  });
+  Object.values(cp).forEach(c=>{
+    const t=c.total||1; c.man_pct=c.man/t*100; c.zone_pct=c.zone/t*100;
+    c.box_avg=c.box_n?c.box_sum/c.box_n:null; c.labeled_plays=c.total;
+    ["COVER_0","COVER_1","COVER_2","COVER_3","COVER_4","COVER_6","2_MAN","COVER_9"].forEach(k=>c[k]=c[k]/t*100);
+  });
+  wd.covProfile=cp;
+
+  // ---- speler vs coverage (+ competitiegemiddelde per coverage) ----
+  const pc={}, cl={};
+  _rowsFor('player_cov_weekly',W).forEach(r=>{
+    const p=(pc[r.player]=pc[r.player]||{});
+    const c=(p[r.coverage]=p[r.coverage]||{targets:0,catches:0,yards:0});
+    c.targets+=n(r.targets); c.catches+=n(r.catches); c.yards+=n(r.yards);
+    const g=(cl[r.coverage]=cl[r.coverage]||{catches:0,yards:0});
+    g.catches+=n(r.catches); g.yards+=n(r.yards);
+  });
+  wd.playerCov=pc;
+  wd.covLeague=cl;
+
+  // ---- RB rushing ----
+  const rr={};
+  _rowsFor('rb_rush_weekly',W).forEach(r=>{
+    const p=(rr[r.player]=rr[r.player]||{carries:0,ybc:0,yac:0,broken:0,weeks:new Set()});
+    p.carries+=n(r.carries); p.ybc+=n(r.ybc); p.yac+=n(r.yac); p.broken+=n(r.broken); p.weeks.add(r._gw);
+  });
+  Object.values(rr).forEach(p=>{
+    const g=p.weeks.size||1; p.games=g; p.ybc_att=p.carries?p.ybc/p.carries:0; p.yac_att=p.carries?p.yac/p.carries:0; p.broken_pg=p.broken/g;
+  });
+  wd.rbRush=rr;
+
+  // ---- run-defense ----
+  const rd={};
+  _rowsFor('run_def_weekly',W).forEach(r=>{
+    const t=(rd[r.team]=rd[r.team]||{rush_yds:0,carries:0,box_sum:0,box_n:0,weeks:new Set()});
+    t.rush_yds+=n(r.rb_rush_yds); t.carries+=n(r.rb_carries); t.box_sum+=n(r.box_sum); t.box_n+=n(r.box_n); t.weeks.add(r._gw);
+  });
+  Object.values(rd).forEach(t=>{
+    const g=t.weeks.size||1; t.rb_rush_yds_pg=t.rush_yds/g; t.rb_ypc=t.carries?t.rush_yds/t.carries:0; t.box_avg=t.box_n?t.box_sum/t.box_n:null;
+  });
+  const rdArr=Object.entries(rd).map(([t,o])=>({t,v:o.rb_rush_yds_pg}));
+  rdArr.sort((a,b)=>b.v-a.v).forEach((e,i)=>{ rd[e.t].rush_yds_rank=i+1; });
+  wd.runDef=rd;
+
+  // ---- formatie-profiel ----
+  const fp={};
+  _rowsFor('form_profile_weekly',W).forEach(r=>{
+    const t=(fp[r.team]=fp[r.team]||{total:0,form_total:0,SHOTGUN:0,UNDER_CENTER:0,PISTOL:0,p11:0,p12:0,p21:0,p22:0});
+    t.total+=n(r.total); t.form_total+=n(r.form_total); t.SHOTGUN+=n(r.SHOTGUN); t.UNDER_CENTER+=n(r.UNDER_CENTER); t.PISTOL+=n(r.PISTOL);
+    t.p11+=n(r.p11); t.p12+=n(r.p12); t.p21+=n(r.p21); t.p22+=n(r.p22);
+  });
+  Object.values(fp).forEach(t=>{
+    const ft=t.form_total||1, tot=t.total||1;
+    t.SHOTGUN=t.SHOTGUN/ft*100; t.UNDER_CENTER=t.UNDER_CENTER/ft*100; t.PISTOL=t.PISTOL/ft*100;
+    t.pp11=t.p11/tot*100; t.pp12=t.p12/tot*100; t.pp21=t.p21/tot*100; t.pp22=t.p22/tot*100;
+  });
+  wd.formProfile=fp;
+
+  // ---- productie per personnel ----
+  const pr={};
+  _rowsFor('form_prod_weekly',W).forEach(r=>{
+    const t=(pr[r.team]=pr[r.team]||{});
+    const g=(t[r.pers]=t[r.pers]||{plays:0,yds:0,rush:0});
+    g.plays+=n(r.plays); g.yds+=n(r.yds_sum); g.rush+=n(r.rush_sum);
+  });
+  Object.values(pr).forEach(t=>Object.values(t).forEach(g=>{
+    g.yds_play=g.plays?g.yds/g.plays:0; g.run_rate=g.plays?g.rush/g.plays*100:0;
+  }));
+  wd.formProd=pr;
+
+  _weekCache[ck]=wd;
+  return wd;
+}
+
+// ============================================================
+//  TEAMKLEUREN EN LOGO'S
+//  Eerste kleur draagt (leesbaar op wit), tweede is voor koptekst.
+//  Logo's komen uit ./logos/<CODE>.png; ontbreekt er een, dan
+//  verdwijnt alleen het plaatje en blijft de rest intact.
+// ============================================================
+const TEAM_COLORS = {
+  ARI:['#97233F','#000000'], ATL:['#A71930','#000000'], BAL:['#241773','#000000'],
+  BUF:['#00338D','#C60C30'], CAR:['#0085CA','#101820'], CHI:['#0B162A','#C83803'],
+  CIN:['#FB4F14','#000000'], CLE:['#FF3C00','#311D00'], DAL:['#041E42','#869397'],
+  DEN:['#002244','#FB4F14'], DET:['#0076B6','#B0B7BC'], GB:['#203731','#FFB612'],
+  HOU:['#03202F','#A71930'], IND:['#002C5F','#A2AAAD'], JAX:['#006778','#101820'],
+  KC:['#E31837','#FFB81C'],  LV:['#101820','#A5ACAF'],  LAC:['#0080C6','#FFC20E'],
+  LA:['#003594','#FFA300'],  MIA:['#008E97','#FC4C02'], MIN:['#4F2683','#FFC62F'],
+  NE:['#002244','#C60C30'],  NO:['#9F8958','#101820'],  NYG:['#0B2265','#A71930'],
+  NYJ:['#125740','#000000'], PHI:['#004C54','#A5ACAF'], PIT:['#101820','#FFB612'],
+  SF:['#AA0000','#B3995D'],  SEA:['#002244','#69BE28'], TB:['#D50A0A','#34302B'],
+  TEN:['#0C2340','#4B92DB'], WAS:['#5A1414','#FFB612'],
+};
+function teamColor(t){ return (TEAM_COLORS[t]||['#61728a','#10161f'])[0]; }
+function teamColor2(t){ return (TEAM_COLORS[t]||['#61728a','#10161f'])[1]; }
+function teamLogo(team, cls){
+  if(!team) return '';
+  return `<img class="${cls}" src="logos/${team}.png" alt="" loading="lazy" onerror="this.classList.add('missing')">`;
+}
+// Zet paneel-HTML in de kleur van een team.
+function ts(team, html){
+  if(!html) return '';
+  return `<div class="team-scope" style="--team:${teamColor(team)};--team2:${teamColor2(team)}">${html}</div>`;
+}
+
+// ---- ROSTER: koppelt spelers aan hun HUIDIGE team (voor data uit vorig seizoen) ----
+// Optionele tabel D.roster = [{player, team, pos}]. Ontbreekt die, dan valt alles
+// terug op het oude gedrag (team zoals het toen was).
+let _rosterMap = null;
+function rosterMap(){
+  if(_rosterMap) return _rosterMap;
+  _rosterMap = {};
+  (D && D.roster || []).forEach(r=>{ if(r && r.player) _rosterMap[normName(r.player)] = r; });
+  return _rosterMap;
+}
+function hasRoster(){ return !!(D && D.roster && D.roster.length); }
+function normName(s){
+  return String(s||'').toLowerCase()
+    .normalize('NFD').replace(/[\u0300-\u036f]/g,'')   // accenten weg
+    .replace(/\b(jr|sr|ii|iii|iv|v)\b/g,'')            // achtervoegsels weg
+    .replace(/[^a-z ]/g,'').replace(/\s+/g,' ').trim();
+}
+function rosterTeamOf(player){
+  const r = rosterMap()[normName(player)];
+  return r ? r.team : null;
+}
+// Hoort deze rij (uit vorig seizoen) bij 'team' volgens het HUIDIGE roster?
+function belongsToNow(player, team){
+  if(!hasRoster()) return null;              // geen roster geladen -> onbekend
+  const t = rosterTeamOf(player);
+  if(!t) return false;                       // niet op enig roster -> vertrokken/gestopt
+  return t === team;
+}
+function playerProfiles(team, uptoWeek){
+  let cur = D.player_weekly.filter(r => r.team===team && r.week<uptoWeek).map(r=>{const o=Object.assign({},r); o._gw=r.week; return o;});
+  let rows;
+  if(windowWeeks<=0){
+    rows = cur;   // alles tot nu = alleen huidig seizoen
+  } else {
+    const prev = window.NFL_SEASONS[String((D.season||0)-1)];
+    let prevRows = [];
+    if(prev){
+      prevRows = (prev.player_weekly||[]).filter(r=>{
+        // Met roster: pak spelers die NU bij dit team zitten (ook als ze toen elders speelden).
+        // Zonder roster: oude gedrag, team zoals het toen was.
+        const now = belongsToNow(r.player, team);
+        return (now===null) ? (r.team===team) : now;
+      }).map(r=>{
+        const o=Object.assign({},r);
+        o._gw = r.week - SEASON_WEEKS;
+        o._prevSeason = true;
+        o._oldTeam = (r.team!==team) ? r.team : null;   // speelde toen ergens anders
+        return o;
+      });
+    }
+    rows = prevRows.concat(cur);
+    const minGw = (uptoWeek-1) - (windowWeeks-1);
+    rows = rows.filter(r=>r._gw>=minGw && r._gw<=uptoWeek-1);
+  }
+  const byP={};
+  rows.forEach(r => (byP[r.player]=byP[r.player]||[]).push(r));
+  const out=[];
+  for(const [player,games] of Object.entries(byP)){
+    games.sort((a,b)=>a._gw-b._gw);
+    const l3=games.slice(-3);
+    out.push({
+      player, pos:games[0].pos, games:games.length,
+      _oldTeams: [...new Set(games.filter(g=>g._oldTeam).map(g=>g._oldTeam))],
+      _prevGames: games.filter(g=>g._prevSeason).length,
+      snap: mean(l3.map(g=>n(g.snap_pct))),
+      targets: mean(games.map(g=>n(g.targets))),
+      targetsL3: mean(l3.map(g=>n(g.targets))),
+      rec: mean(games.map(g=>n(g.rec))),
+      rec_yds: mean(games.map(g=>n(g.rec_yds))), rec_yds_l3: mean(l3.map(g=>n(g.rec_yds))),
+      rush_yds: mean(games.map(g=>n(g.rush_yds))), rush_yds_l3: mean(l3.map(g=>n(g.rush_yds))),
+      tgt_share: mean(games.map(g=>n(g.tgt_share))),
+      snapSeries: games.map(g=>({week:g._gw, snap:n(g.snap_pct)*100, tgt:n(g.targets)})),
+    });
+  }
+  out.sort((a,b)=>(b.targets+b.rush_yds/10)-(a.targets+a.rush_yds/10));
+  return out;
+}
+
+function injuriesFor(team, week){ return D.injuries.filter(r=>r.team===team && r.week==week); }
+
+function rankPill(rank){
+  if(rank===null||rank===undefined) return '<span class="dim">\u2013</span>';
+  let cls='rank-mid'; if(rank<=10)cls='rank-bad'; else if(rank>=23)cls='rank-good';
+  return `<span class="rank-pill ${cls}">#${rank}</span>`;
+}
+function trendArrow(season,l3){
+  const d=l3-season;
+  if(d>8) return `<span class="trend-up">\u25b2 ${fmt(l3,0)}</span>`;
+  if(d<-8) return `<span class="trend-down">\u25bc ${fmt(l3,0)}</span>`;
+  return `<span class="dim">${fmt(l3,0)}</span>`;
+}
+function sparkline(series,key,color,maxO){
+  if(!series||!series.length) return '';
+  const vals=series.map(s=>s[key]); const max=maxO||Math.max(...vals,1);
+  const w=70,h=20,pad=2; const step=series.length>1?(w-2*pad)/(series.length-1):0;
+  const pts=series.map((s,i)=>`${(pad+i*step).toFixed(1)},${(h-pad-(s[key]/max)*(h-2*pad)).toFixed(1)}`).join(' ');
+  const last=series[series.length-1][key];
+  const lx=pad+(series.length-1)*step, ly=h-pad-(last/max)*(h-2*pad);
+  return `<svg class="spark" width="${w}" height="${h}" viewBox="0 0 ${w} ${h}"><polyline points="${pts}" fill="none" stroke="${color}" stroke-width="1.5"/><circle cx="${lx.toFixed(1)}" cy="${ly.toFixed(1)}" r="2" fill="${color}"/></svg>`;
+}
+
+const MAN_TYPES=["COVER_0","COVER_1","2_MAN"], ZONE_TYPES=["COVER_2","COVER_3","COVER_4","COVER_6","COVER_9","COMBO"];
+const MIN_COV_TARGETS=20;
+
+// ============================================================
+//  SPEELSITUATIES (play context)
+//  Yards per target per situatie: shotgun/under center, play-action,
+//  tegen blitz, 3rd down, deep, tegen 7+ box, red zone.
+//  Deze situaties OVERLAPPEN elkaar: één play kan tegelijk shotgun,
+//  play-action en 3rd down zijn. Het zijn dus invalshoeken, geen
+//  categorieën die optellen tot het totaal.
+// ============================================================
+const CTX_LABELS = {
+  shotgun:'Shotgun', under_center:'Under center', play_action:'Play-action',
+  blitz:'Tegen blitz', third_down:'3rd down', deep:'Deep pass',
+  stacked_box:'Tegen 7+ box', red_zone:'Red zone',
+};
+// Volgorde waarin ze getoond worden.
+const CTX_ORDER = ['shotgun','under_center','play_action','blitz','third_down','deep','stacked_box','red_zone'];
+// Ondergrens per situatie: onder dit aantal targets tonen we het cijfer grijs.
+// Lager dan bij coverage, omdat deze situaties zeldzamer zijn - maar bewust
+// niet zó laag dat drie plays er gezaghebbend uitzien.
+const MIN_CTX_TARGETS = 10;
+
+// Telt play_context-regels op voor één speler, met hetzelfde weekvenster
+// als de rest van het dashboard (inclusief vorig seizoen bij een venster).
+function playContextFor(team, player, uptoWeek){
+  const uit = {};
+  const tel = (rows, offset) => {
+    (rows||[]).forEach(r=>{
+      if(r.player!==player) return;
+      const gw = r.week + offset;
+      if(gw >= uptoWeek) return;
+      if(windowWeeks>0){
+        const minGw = (uptoWeek-1) - (windowWeeks-1);
+        if(gw < minGw) return;
+      } else if(offset!==0){
+        return;   // "alles tot nu" = alleen huidig seizoen
+      }
+      const o = uit[r.context] || (uit[r.context]={targets:0, rec:0, yards:0});
+      o.targets += r.targets; o.rec += r.rec; o.yards += r.yards;
+    });
+  };
+  tel(D.play_context, 0);
+  if(windowWeeks>0){
+    const prev = window.NFL_SEASONS[String((D.season||0)-1)];
+    if(prev) tel(prev.play_context, -SEASON_WEEKS);
+  }
+  return uit;
+}
+
+// Competitiegemiddelde per speelsituatie (yards per reception), zelfde
+// weekvenster. Zo kan het paneel per speler zien of hij bóven of ónder het
+// normale niveau presteert in die situatie. Cache invalideert op seizoen+venster.
+let _ctxLeague = { key:null, data:null };
+function playContextLeague(uptoWeek){
+  const key = uptoWeek + '/' + windowWeeks + '/' + (D && D.season);
+  if(_ctxLeague.key === key) return _ctxLeague.data;
+  const agg = {};
+  const tel = (rows, offset) => {
+    (rows||[]).forEach(r=>{
+      const gw = r.week + offset;
+      if(gw >= uptoWeek) return;
+      if(windowWeeks>0){
+        if(gw < (uptoWeek-1) - (windowWeeks-1)) return;
+      } else if(offset!==0){ return; }
+      const o = agg[r.context] || (agg[r.context]={rec:0, yards:0});
+      o.rec += r.rec; o.yards += r.yards;
+    });
+  };
+  tel(D.play_context, 0);
+  if(windowWeeks>0){
+    const prev = window.NFL_SEASONS[String((D.season||0)-1)];
+    if(prev) tel(prev.play_context, -SEASON_WEEKS);
+  }
+  _ctxLeague = { key, data: agg };
+  return agg;
+}
+
+// Eén cel voor de speelsituatie- en coverage-panelen: het aantal receptions als
+// groot getal met een teambalk erachter (volume t.o.v. maxRec in die rij), en de
+// getalkleur naar yds/rec t.o.v. het competitiegemiddelde (leagueYpr).
+// minT = drempel targets waaronder de yds/rec te dun is (getal wordt dan grijs).
+// maxRec > 0 tekent de balk; 0 laat hem weg.
+function pvCell(o, leagueYpr, minT, maxRec){
+  if(!o || !o.targets) return '<td class="pv dash">–</td>';
+  const thin = o.targets < minT;
+  const catches = (o.catches !== undefined) ? o.catches : o.rec;   // coverage: catches · context: rec
+  const ypr = catches ? o.yards/catches : null;
+  let effCls = '';
+  if(!thin && ypr!==null && leagueYpr){
+    const r = ypr/leagueYpr;
+    effCls = r>=1.12 ? 'trend-up' : (r<=0.88 ? 'trend-down' : '');
+  }
+  const pct = (maxRec>0 && catches>0) ? Math.max(6, Math.round(100*catches/maxRec)) : 0;
+  const bar = pct ? `<div class="bar" style="width:${pct}%"></div>` : '';
+  const sub = ypr!==null ? `<span class="yr">${fmt(ypr,1)}</span>` : '';
+  return `<td class="pv${thin?' thin':''}" title="${o.targets} targets · ${catches} rec">`
+       + `${bar}<span class="n ${effCls}">${catches}</span>${sub}</td>`;
+}
+
+// ============================================================
+//  SIGNALEN — detecteert opvallende dingen (voedt highlights + samenvatting)
+// ============================================================
+// Geeft per speler een set 'flags' terug + een korte tekst voor de samenvatting.
+// Dit is GEEN score of advies — het markeert alleen wat opvalt, jij oordeelt.
+function detectSignals(team, oppTeam, wk, wd){
+  const profs = playerProfiles(team, wk);
+  const oppDef = wd.teamDef[oppTeam] || {};
+  const flags = {};        // player -> Set van tags
+  const notes = [];        // korte samenvattingsregels
+  const add = (pl,tag)=>{ (flags[pl]=flags[pl]||new Set()).add(tag); };
+
+  // Out-spelers en vrijgekomen targets
+  const outs = injuriesFor(team, wk).filter(r=>r.status==='Out');
+  const byName={}; profs.forEach(p=>byName[p.player]=p);
+  let vacTargets = 0; const outNames=[];
+  outs.forEach(o=>{ const p=byName[o.player]; if(p && (p.targets>=2||p.snap>=0.3)){ vacTargets+=p.targets; outNames.push(o.player); } });
+  if(vacTargets>=3){
+    notes.push(`${team}: ${fmt(vacTargets,1)} targets/g komen vrij (${outNames.join(', ')} out)`);
+  }
+
+  profs.filter(p=>['WR','TE','RB'].includes(p.pos)).forEach(p=>{
+    // Stijgende vorm (rec yds laatste 3 duidelijk boven gemiddelde)
+    const rising = (p.rec_yds_l3 - p.rec_yds) > 12;
+    // Stijgende snap share (laatste punt duidelijk boven eerdere)
+    let snapRise=false;
+    if(p.snapSeries && p.snapSeries.length>=3){
+      const s=p.snapSeries.map(x=>x.snap); const last=s[s.length-1];
+      const earlier=s.slice(0,-1); const avgE=earlier.reduce((a,b)=>a+b,0)/earlier.length;
+      snapRise = last - avgE > 12;
+    }
+    // Gunstige matchup: tegenstander zwak (rank<=10) tegen deze positie
+    const dpos = oppDef[p.pos];
+    const softMatchup = dpos && dpos.rec_yds_rank && dpos.rec_yds_rank<=10;
+
+    if(rising) add(p.player,'rising');
+    if(snapRise) add(p.player,'snaprise');
+    if(softMatchup) add(p.player,'softdef');
+
+    // Sterk gecombineerd signaal → samenvatting
+    if((rising||snapRise) && softMatchup){
+      notes.push(`${p.player} (${team}): ${rising?'stijgende vorm':'stijgend snap%'} \u00e9n ${oppTeam} zwak tegen ${p.pos} (#${dpos.rec_yds_rank})`);
+    }
+  });
+
+  return { flags, notes, vacTargets };
+}
+
+// ============================================================
+//  SORTEREN (spelerstabellen)
+// ============================================================
+let playerSort = { team:null, key:null, dir:null };
+function setSort(team, key){
+  if(playerSort.team===team && playerSort.key===key){
+    playerSort.dir = playerSort.dir==='desc' ? 'asc' : (playerSort.dir==='asc' ? null : 'desc');
+    if(playerSort.dir===null){ playerSort.key=null; playerSort.team=null; }
+  } else {
+    playerSort = { team, key, dir:'desc' };
+  }
+  render();
+}
+function sortPlayers(profs, team){
+  if(playerSort.team!==team || !playerSort.key || !playerSort.dir) return profs;
+  const k=playerSort.key; const dir=playerSort.dir==='asc'?1:-1;
+  const arr=profs.slice();
+  arr.sort((a,b)=>{
+    let va=a[k], vb=b[k];
+    if(k==='player'){ return dir * String(va).localeCompare(String(vb)); }
+    va=n(va); vb=n(vb);
+    return dir*(va-vb);
+  });
+  return arr;
+}
+
+// ============================================================
+//  PANELEN
+// ============================================================
+function playerPanel(team, uptoWeek, signals){
+  const sig = (signals && signals.flags) || {};
+  let profs = playerProfiles(team, uptoWeek).filter(p=>['WR','TE','RB','QB','FB'].includes(p.pos));
+  // sorteerbaar: standaard op betrokkenheid (al gesorteerd), maar respecteer sortState
+  profs = sortPlayers(profs, team);
+  profs = profs.slice(0,12);
+  if(!profs.length) return `<div class="panel"><h2>${team}</h2><div class="empty">Geen spelerdata.</div></div>`;
+  const arrow = (dir)=> dir==='asc'?' \u25b2':(dir==='desc'?' \u25bc':'');
+  const sortDir = (playerSort.team===team && playerSort.key) ? (k)=> playerSort.key===k?arrow(playerSort.dir):'' : ()=>'';
+  let rows = profs.map(p=>{
+    const recCol = trendArrow(p.rec_yds, p.rec_yds_l3);
+    const rushCol = (p.pos==='RB'||p.pos==='QB') ? trendArrow(p.rush_yds, p.rush_yds_l3) : '<span class="dim">\u2013</span>';
+    const snapPct = p.snap*100;
+    const tags = sig[p.player];
+    let badges='';
+    if(tags){
+      if(tags.has('snaprise')) badges+='<span class="sig sig-snap" title="snap share stijgt">\u25b2snap</span>';
+      if(tags.has('rising'))   badges+='<span class="sig sig-form" title="vorm stijgt">\u25b2vorm</span>';
+      if(tags.has('softdef'))  badges+='<span class="sig sig-def" title="tegenstander zwak tegen deze positie">gunstig</span>';
+    }
+    const hot = tags && (tags.has('softdef') && (tags.has('rising')||tags.has('snaprise')));
+    return `<tr class="${hot?'row-hot':''}">
+      <td class="player-name clickable-name" onclick="openPlayer('${team}','${p.player.replace(/'/g,"\\'")}')">${p.player}<span class="pos">${p.pos}</span>${badges}</td>
+      <td class="bar-cell"><div class="bar" style="width:${snapPct}%"></div><span>${fmt(snapPct,0)}%</span></td>
+      <td>${sparkline(p.snapSeries,'snap','var(--blue)',100)}</td>
+      <td>${fmt(p.targets,1)}</td>
+      <td>${sparkline(p.snapSeries,'tgt','var(--accent)')}</td>
+      <td class="dim">${fmt(p.tgt_share*100,0)}%</td>
+      <td>${recCol}</td><td>${rushCol}</td>
+    </tr>`;
+  }).join('');
+  return `<div class="panel">
+    <h2>${team} <span class="tag">snap% &amp; vorm ${wkLbl(uptoWeek)}</span></h2>
+    <table><thead><tr>
+      <th class="sortable" onclick="setSort('${team}','player')">Speler${sortDir('player')}</th>
+      <th class="sortable" onclick="setSort('${team}','snap')">Snap%${sortDir('snap')}</th>
+      <th>Snap trend</th>
+      <th class="sortable" onclick="setSort('${team}','targets')">Tgt/g${sortDir('targets')}</th>
+      <th>Tgt trend</th>
+      <th class="sortable" onclick="setSort('${team}','tgt_share')">Tgt%${sortDir('tgt_share')}</th>
+      <th class="sortable" onclick="setSort('${team}','rec_yds')">Rec yds (L3)${sortDir('rec_yds')}</th>
+      <th>Rush yds (L3)</th></tr></thead>
+    <tbody>${rows}</tbody></table>
+    <div class="note">\u25b2/\u25bc = laatste 3 games boven/onder gemiddelde. Badges markeren opvallende signalen. Klik een kolomkop om te sorteren. Alle cijfers ${wkLbl(uptoWeek)}.</div>
+  </div>`;
+}
+
+function coveragePanel(team, oppTeam, uptoWeek, wd){
+  const opp = wd.covProfile[oppTeam] || null;
+  const lg = wd.covLeague || {};
+  const lgYpr = types=>{ let c=0,y=0; types.forEach(k=>{ if(lg[k]){ c+=lg[k].catches; y+=lg[k].yards; } }); return c ? y/c : null; };
+  const ONE = k=> (lg[k] && lg[k].catches) ? lg[k].yards/lg[k].catches : null;
+  const lgMan = lgYpr(MAN_TYPES), lgZone = lgYpr(ZONE_TYPES);
+  const profs = playerProfiles(team, uptoWeek).filter(p=>['WR','TE','RB'].includes(p.pos)).slice(0,8);
+  let rows='';
+  profs.forEach(p=>{
+    const c=wd.playerCov[p.player]; if(!c) return;
+    const man={targets:0,catches:0,yards:0}, zone={targets:0,catches:0,yards:0};
+    Object.entries(c).forEach(([cov,o])=>{
+      if(MAN_TYPES.includes(cov)){man.targets+=o.targets;man.catches+=o.catches;man.yards+=o.yards;}
+      if(ZONE_TYPES.includes(cov)){zone.targets+=o.targets;zone.catches+=o.catches;zone.yards+=o.yards;}
+    });
+    // Verwachte yds/rec vs deze tegenstander: weeg de man/zone-yds/rec van de
+    // speler naar hoe vaak de tegenstander man/zone speelt.
+    let matchCell='<td class="pv dash">\u2013</td>';
+    if(opp && man.targets>=MIN_COV_TARGETS && zone.targets>=MIN_COV_TARGETS && man.catches && zone.catches && (opp.man_pct+opp.zone_pct)>0){
+      const yprMan=man.yards/man.catches, yprZone=zone.yards/zone.catches;
+      const w=(opp.man_pct*yprMan + opp.zone_pct*yprZone)/(opp.man_pct+opp.zone_pct);
+      const own=(man.yards+zone.yards)/(man.catches+zone.catches);
+      let cls=''; if(w>=own+0.6) cls='trend-up'; else if(w<=own-0.6) cls='trend-down';
+      matchCell=`<td class="pv" title="verwachte yds/rec vs ${oppTeam}"><span class="n ${cls}">${fmt(w,1)}</span></td>`;
+    }
+    const mzMax = Math.max(man.catches, zone.catches);
+    const cMax = Math.max((c["COVER_1"]||{}).catches||0, (c["COVER_2"]||{}).catches||0, (c["COVER_3"]||{}).catches||0);
+    rows+=`<tr><td class="player-name">${p.player}<span class="pos">${p.pos}</span></td>
+      ${pvCell(man,lgMan,MIN_COV_TARGETS,mzMax)}${pvCell(zone,lgZone,MIN_COV_TARGETS,mzMax)}
+      ${pvCell(c["COVER_1"],ONE("COVER_1"),MIN_COV_TARGETS,cMax)}${pvCell(c["COVER_2"],ONE("COVER_2"),MIN_COV_TARGETS,cMax)}${pvCell(c["COVER_3"],ONE("COVER_3"),MIN_COV_TARGETS,cMax)}
+      ${matchCell}</tr>`;
+  });
+  if(!rows) return '';
+  return `<div class="panel"><h2>${team} \u2014 ontvangers vs coverage <span class="tag">receptions \u00b7 yds/rec, ${wkLbl(uptoWeek)}</span></h2>
+    <table><thead><tr><th>Speler</th><th class="pv-h">vs Man</th><th class="pv-h">vs Zone</th><th class="pv-h">Cover 1</th><th class="pv-h">Cover 2</th><th class="pv-h">Cover 3</th><th class="pv-h">vs ${oppTeam}</th></tr></thead>
+    <tbody>${rows}</tbody></table>
+    <div class="note">Groot getal = <b>receptions</b> tegen die coverage, eronder de yards per reception; de balk toont het volume (man vs zone, en Cover 1/2/3 onderling).
+    Getalkleur = yds/rec t.o.v. het competitiegemiddelde voor die coverage: <span class="trend-up">groen</span> effici\u00ebnter, <span class="trend-down">rood</span> minder.
+    <span class="thin-t">Grijs</span> = onder ${MIN_COV_TARGETS} targets (yds/rec te dun; het aantal klopt wel). Man/Zone het betrouwbaarst.
+    <b>vs ${oppTeam}</b> = verwachte yds/rec gewogen naar hoeveel man/zone ${oppTeam} speelt.</div></div>`;
+}
+
+// Ontvangers per speelsituatie: shotgun/under center, play-action, tegen blitz,
+// 3rd down, deep, tegen 7+ box, red zone. Zelfde weekvenster als de rest van het
+// dashboard (playContextFor telt vorig seizoen mee bij een venster).
+function playSituationPanel(team, oppTeam, uptoWeek, wd){
+  const profs = playerProfiles(team, uptoWeek).filter(p=>['WR','TE','RB'].includes(p.pos)).slice(0,8);
+  const COLS = [
+    ['shotgun','Shotgun'], ['under_center','U-center'], ['play_action','Play-act'],
+    ['blitz','vs Blitz'], ['third_down','3rd down'], ['deep','Deep'],
+    ['stacked_box','7+ box'], ['red_zone','Red zone'],
+  ];
+  const lg = playContextLeague(uptoWeek);
+  const lgYpr = k=> (lg[k] && lg[k].rec) ? lg[k].yards/lg[k].rec : null;
+
+  let rows='';
+  profs.forEach(p=>{
+    const ctx = playContextFor(team, p.player, uptoWeek);
+    if(!Object.keys(ctx).length) return;
+    const maxRec = Math.max(...COLS.map(([k])=> (ctx[k]||{}).rec || 0), 1);
+    rows += `<tr><td class="player-name">${p.player}<span class="pos">${p.pos}</span></td>
+      ${COLS.map(([k])=>pvCell(ctx[k], lgYpr(k), MIN_CTX_TARGETS, maxRec)).join('')}</tr>`;
+  });
+  if(!rows) return '';
+
+  const box = (wd.runDef[oppTeam]||{}).box_avg;
+  const boxHint = (box && box>=6.8)
+    ? ` <b>${oppTeam}</b> speelt zware boxes (gem. ${fmt(box,1)}) — let extra op de <b>7+ box</b>-kolom.`
+    : '';
+
+  return `<div class="panel"><h2>${team} — ontvangers per speelsituatie <span class="tag">receptions · yds/rec, ${wkLbl(uptoWeek)}</span></h2>
+    <table><thead><tr><th>Speler</th>${COLS.map(([,l])=>`<th class="pv-h">${l}</th>`).join('')}</tr></thead>
+    <tbody>${rows}</tbody></table>
+    <div class="note">Groot getal = <b>receptions</b> in die situatie, eronder de yards per reception; de balk toont hoe het volume van die speler over de situaties verdeeld is.
+    Getalkleur = yds/rec t.o.v. het competitiegemiddelde voor die situatie: <span class="trend-up">groen</span> efficiënter, <span class="trend-down">rood</span> minder.
+    <span class="thin-t">Grijs</span> = onder ${MIN_CTX_TARGETS} targets (yds/rec te dun; het aantal klopt wel).
+    Situaties <b>overlappen</b> — een play kan tegelijk shotgun, play-action en 3rd down zijn.${boxHint}</div></div>`;
+}
+
+function rushingPanel(team, uptoWeek, wd){
+  const profs = playerProfiles(team, uptoWeek).filter(p=>['RB','FB','QB'].includes(p.pos)).slice(0,6);
+  let rows='';
+  profs.forEach(p=>{
+    const r=wd.rbRush[p.player]; if(!r||r.carries<5) return;
+    rows+=`<tr><td class="player-name">${p.player}<span class="pos">${p.pos}</span></td>
+      <td>${fmt(r.carries,0)}</td><td>${fmt(r.ybc_att,1)}</td><td><b>${fmt(r.yac_att,1)}</b></td><td>${fmt(r.broken_pg,1)}</td></tr>`;
+  });
+  if(!rows) return '';
+  return `<div class="panel"><h2>${team} \u2014 rushing detail <span class="tag">${wkLbl(uptoWeek)}</span></h2>
+    <table><thead><tr><th>Speler</th><th>Carries</th><th>YBC/att</th><th>YAC/att</th><th>Broken/g</th></tr></thead>
+    <tbody>${rows}</tbody></table>
+    <div class="note">YBC = yards vóór contact (blocking) · YAC = yards ná contact (back zelf) · Broken = gemiste tackles/game</div></div>`;
+}
+
+function formationPanel(team, wd){
+  const f=wd.formProfile[team]; const prod=wd.formProd[team]||{};
+  if(!f) return '';
+  function pr(label,key){
+    const pct=f["pp"+key]; const p=prod[key];
+    return `<tr><td>${label} <span class="pos">${key}</span></td><td>${fmt(pct,0)}%</td>
+      <td>${p?fmt(p.yds_play,1):'<span class="dim">\u2013</span>'}</td>
+      <td>${p?fmt(p.run_rate,0)+'%':'<span class="dim">\u2013</span>'}</td></tr>`;
+  }
+  return `<div class="panel"><h2>${team} \u2014 aanval: formatie &amp; personnel</h2>
+    <div class="cov-block"><div class="cov-head">Formatie-mix</div>
+      ${coverageBar('Shotgun',f.SHOTGUN,'var(--accent)')}
+      ${coverageBar('Under center',f.UNDER_CENTER,'var(--blue)')}
+      ${coverageBar('Pistol',f.PISTOL,'#a371f7')}</div>
+    <table><thead><tr><th>Personnel</th><th>% plays</th><th>Yds/play</th><th>Run%</th></tr></thead>
+    <tbody>${pr('1 RB, 1 TE, 3 WR','11')}${pr('1 RB, 2 TE, 2 WR','12')}${pr('2 RB, 1 TE, 2 WR','21')}${pr('2 RB, 2 TE, 1 WR','22')}</tbody></table>
+    <div class="note">Personnel = #RB + #TE (11 = 1 RB, 1 TE, 3 WR). Data tot (niet t/m) de gekozen week.</div></div>`;
+}
+
+function coverageBar(label,pct,color){
+  const w=Math.max(0,Math.min(100,pct||0));
+  return `<div class="cov-row"><span class="cov-label">${label}</span><div class="cov-track"><div class="cov-fill" style="width:${w}%;background:${color}"></div></div><span class="cov-val">${fmt(pct,0)}%</span></div>`;
+}
+
+function defensePanel(team, wd){
+  const d=wd.teamDef[team]||{};
+  function row(label,pos,key,rk){
+    const r=d[pos]; if(!r) return `<tr><td>${label}</td><td colspan="3" class="dim">geen data</td></tr>`;
+    return `<tr><td>${label}</td><td>${fmt(r[key],1)}</td><td>${rankPill(r[rk])}</td><td class="dim">${r.games} g</td></tr>`;
+  }
+  return `<div class="panel"><h2>${team} verdediging <span class="tag">wat ${team} toestaat</span></h2>
+    <table><thead><tr><th>Tegen positie</th><th>Per game</th><th>Rank</th><th>\u2014</th></tr></thead>
+    <tbody>${row('WR receiving yds','WR','rec_yds_pg','rec_yds_rank')}${row('TE receiving yds','TE','rec_yds_pg','rec_yds_rank')}${row('RB receiving yds','RB','rec_yds_pg','rec_yds_rank')}${row('RB rushing yds','RB','rush_yds_pg','rush_yds_rank')}</tbody></table>
+    <div class="note"><span class="hint">#1\u201310</span> = staat veel toe (gunstig) · <span style="color:var(--green)">#23\u201332</span> = sterk</div></div>`;
+}
+
+function defenseProfilePanel(team, wd){
+  const p=wd.covProfile[team]; const ps=wd.defPos[team]||{};
+  if(!p && !Object.keys(ps).length) return `<div class="panel"><h2>${team} \u2014 defensie-profiel</h2><div class="empty">Geen data.</div></div>`;
+  let cov='';
+  if(p) cov=`<div class="cov-block"><div class="cov-head">Coverage-mix <span class="dim">(${fmt(p.labeled_plays,0)} plays)</span></div>
+    ${coverageBar('Cover 1 (man)',p.COVER_1,'var(--red)')}${coverageBar('Cover 2',p.COVER_2,'var(--blue)')}${coverageBar('Cover 3',p.COVER_3,'var(--accent)')}${coverageBar('Cover 4',p.COVER_4,'#a371f7')}${coverageBar('Cover 6',p.COVER_6,'#56d4dd')}
+    <div class="cov-split"><span><b class="trend-down">${fmt(p.man_pct,0)}%</b> man</span><span><b class="blue-t">${fmt(p.zone_pct,0)}%</b> zone</span><span class="dim">box: ${fmt(p.box_avg,1)}</span></div></div>`;
+  function pr(label,grp){
+    const r=ps[grp]; if(!r) return `<tr><td>${label}</td><td colspan="3" class="dim">geen data</td></tr>`;
+    return `<tr><td>${label}</td><td>${fmt(r.yards_pg,0)}</td><td>${rankPill(r.yards_rank)}</td><td class="dim">rtg ${fmt(r.passer_rating,0)}</td></tr>`;
+  }
+  return `<div class="panel"><h2>${team} \u2014 defensie-profiel <span class="tag">coverage &amp; posities</span></h2>${cov}
+    <table><thead><tr><th>Coverage door</th><th>Yds/g</th><th>Rank</th><th>\u2014</th></tr></thead>
+    <tbody>${pr('Cornerbacks','CB')}${pr('Linebackers','LB')}${pr('Safeties','S')}</tbody></table>
+    <div class="note">Yds/g toegestaan door die groep · <span class="hint">#1\u201310</span> = staat veel toe. Cumulatief t/m gekozen week.</div></div>`;
+}
+
+function runDefensePanel(team, wd){
+  const r=wd.runDef[team]; if(!r) return '';
+  return `<div class="panel"><h2>${team} \u2014 run defense <span class="tag">tegen RB's</span></h2>
+    <table><thead><tr><th>Maat</th><th>Waarde</th><th>Rank</th></tr></thead>
+    <tbody><tr><td>Rush yds/game toegestaan</td><td>${fmt(r.rb_rush_yds_pg,0)}</td><td>${rankPill(r.rush_yds_rank)}</td></tr>
+    <tr><td>Yards per carry toegestaan</td><td>${fmt(r.rb_ypc,2)}</td><td class="dim">\u2013</td></tr>
+    <tr><td>Defenders in box (gem.)</td><td>${fmt(r.box_avg,2)}</td><td class="dim">${r.box_avg>=6.8?'zwaar':r.box_avg<=6.3?'licht':'gemiddeld'}</td></tr></tbody></table>
+    <div class="note"><span class="hint">#1\u201310</span> = staat veel rush toe (gunstig voor RB)</div></div>`;
+}
+
+function passDefensePanel(team, wd){
+  const ps=wd.defPos[team]||{};
+  const td=wd.teamDef[team]||{};
+  if(!Object.keys(ps).length && !Object.keys(td).length) return '';
+  function grpRow(label,grp){
+    const r=ps[grp]; if(!r) return `<tr><td>${label}</td><td colspan="3" class="dim">geen data</td></tr>`;
+    return `<tr><td>${label}</td><td>${fmt(r.yards_pg,0)}</td><td>${rankPill(r.yards_rank)}</td><td class="dim">rtg ${fmt(r.passer_rating,0)}</td></tr>`;
+  }
+  function posRow(label,pos){
+    const r=td[pos]; if(!r) return `<tr><td>${label}</td><td colspan="3" class="dim">geen data</td></tr>`;
+    return `<tr><td>${label}</td><td>${fmt(r.rec_yds_pg,1)}</td><td>${rankPill(r.rec_yds_rank)}</td><td class="dim">${r.games} g</td></tr>`;
+  }
+  return `<div class="panel"><h2>${team} \u2014 pass defense <span class="tag">tegen de pass</span></h2>
+    <table><thead><tr><th>Toegestaan aan</th><th>Yds/g</th><th>Rank</th><th>\u2014</th></tr></thead>
+    <tbody>
+      ${posRow('WR receiving','WR')}${posRow('TE receiving','TE')}${posRow('RB receiving','RB')}
+      ${grpRow('via Cornerbacks','CB')}${grpRow('via Linebackers','LB')}${grpRow('via Safeties','S')}
+    </tbody></table>
+    <div class="note">Bovenste 3: yds/game toegestaan aan die aanvalspositie. Onderste 3: yds toegestaan dóór die verdedigende groep (rtg = passer rating tegen). <span class="hint">#1\u201310</span> = staat veel toe.</div></div>`;
+}
+
+function vacatedPanel(team, week){
+  const inj = injuriesFor(team, week).filter(r=>r.status==='Out');
+  const profs = playerProfiles(team, week);
+  const byName={}; profs.forEach(p=>byName[p.player]=p);
+  const out=[];
+  inj.forEach(r=>{ const p=byName[r.player]; if(p&&(p.targets>=2||p.snap>=0.3)) out.push({player:r.player,pos:p.pos,targets:p.targets,snap:p.snap,injury:r.injury}); });
+  if(!out.length) return `<div class="panel"><h2>${team} \u2014 vrijgekomen kansen <span class="tag">week ${week}</span></h2><div class="empty">Geen impactvolle spelers als 'Out' gemeld.</div></div>`;
+  const totT=out.reduce((a,b)=>a+b.targets,0);
+  const outNames=new Set(out.map(o=>o.player));
+  const cand=profs.filter(p=>!outNames.has(p.player)&&p.targets>=1&&['WR','TE','RB'].includes(p.pos)).slice(0,5);
+  const outRows=out.map(o=>`<tr><td class="player-name out">${o.player}<span class="pos">${o.pos}</span></td><td>${fmt(o.targets,1)}</td><td class="dim">${fmt(o.snap*100,0)}%</td><td class="dim">${o.injury||''}</td></tr>`).join('');
+  const candRows=cand.map(p=>`<tr><td class="player-name">${p.player}<span class="pos">${p.pos}</span></td><td>${fmt(p.targets,1)}</td><td class="dim">${fmt(p.snap*100,0)}%</td><td>${trendArrow(p.rec_yds,p.rec_yds_l3)}</td></tr>`).join('');
+  return `<div class="panel vac"><h2>${team} \u2014 vrijgekomen kansen <span class="tag">week ${week}</span></h2>
+    <div class="vac-head">\u26a0 <b>${fmt(totT,1)} targets/game</b> komen vrij door blessures</div>
+    <table><thead><tr><th>OUT</th><th>Tgt/g</th><th>Snap%</th><th>Blessure</th></tr></thead><tbody>${outRows}</tbody></table>
+    <div class="vac-sub">Mogelijke begunstigden:</div>
+    <table><thead><tr><th>Speler</th><th>Tgt/g</th><th>Snap%</th><th>Rec vorm</th></tr></thead><tbody>${candRows||'<tr><td colspan=4 class=dim>geen</td></tr>'}</tbody></table>
+    <div class="note">Hint, geen voorspelling \u2014 wie de targets pakt hangt af van scheme.</div></div>`;
+}
+
+function injuryPanel(team, week){
+  const inj=injuriesFor(team,week);
+  const skill=inj.filter(r=>['WR','TE','RB','QB','FB'].includes(r.pos));
+  const rows=(skill.length?skill:inj).map(r=>{
+    const cls=r.status==='Out'?'out':(r.status&&r.status.includes('uestion')?'quest':'dim');
+    return `<tr><td class="player-name">${r.player}<span class="pos">${r.pos||'?'}</span></td><td class="${cls}">${r.status||'\u2013'}</td><td class="dim">${r.injury||''}</td></tr>`;
+  }).join('');
+  return `<div class="panel"><h2>${team} \u2014 injury report <span class="tag">week ${week}</span></h2>
+    ${rows?`<table><thead><tr><th>Speler</th><th>Status</th><th>Blessure</th></tr></thead><tbody>${rows}</tbody></table>`:'<div class="empty">Geen meldingen.</div>'}</div>`;
+}
+
+// ============================================================
+//  RENDER
+// ============================================================
+// ============================================================
+//  EXPORT
+// ============================================================
+function buildSummaryText(){
+  const wk=state.week, home=state.home, away=state.away;
+  const wd=buildWeekData(wk);
+  const L=[];
+  L.push(`NFL MATCHUP - ${away} @ ${home}`);
+  L.push(`Seizoen ${D.season}, analyse voor week ${wk} (data ${wk>1?'t/m week '+(wk-1):'n.v.t.'})${windowWeeks>0?(' [laatste '+windowWeeks+' weken]'):''}`);
+  L.push('='.repeat(48));
+  [[away,home],[home,away]].forEach(([tm,opp])=>{
+    L.push(`\n## ${tm} aanval`);
+    const profs=playerProfiles(tm,wk).filter(p=>['WR','TE','RB','QB'].includes(p.pos)).slice(0,8);
+    profs.forEach(p=>{
+      L.push(`  ${p.player} (${p.pos}): snap ${fmt(p.snap*100,0)}%, ${fmt(p.targets,1)} tgt/g, tgt% ${fmt(p.tgt_share*100,0)}, rec ${fmt(p.rec_yds,0)} yd/g (L3 ${fmt(p.rec_yds_l3,0)})`);
+    });
+    const d=wd.teamDef[opp]||{};
+    L.push(`\n  ${opp} verdediging staat toe (per game):`);
+    if(d.WR) L.push(`    WR ${fmt(d.WR.rec_yds_pg,0)} yd (#${d.WR.rec_yds_rank}) | TE ${d.TE?fmt(d.TE.rec_yds_pg,0):'-'} yd | RB rush ${d.RB?fmt(d.RB.rush_yds_pg,0):'-'} yd`);
+    const cov=wd.covProfile[opp];
+    if(cov) L.push(`    coverage: ${fmt(cov.man_pct,0)}% man / ${fmt(cov.zone_pct,0)}% zone, box ${fmt(cov.box_avg,1)}`);
+    const outs=injuriesFor(tm,wk).filter(r=>r.status==='Out');
+    if(outs.length) L.push(`  OUT: ${outs.map(o=>o.player+' ('+(o.pos||'?')+')').join(', ')}`);
+  });
+  L.push('\n- gemaakt met NFL Matchup Terminal (analyse-tool, geen voorspeller)');
+  return L.join('\n');
+}
+function downloadNote(){
+  const txt=buildSummaryText();
+  const blob=new Blob([txt],{type:'text/plain;charset=utf-8'});
+  const url=URL.createObjectURL(blob);
+  const a=document.createElement('a');
+  a.href=url; a.download=`matchup_${state.away}_at_${state.home}_S${D.season}_wk${state.week}.txt`;
+  document.body.appendChild(a); a.click(); document.body.removeChild(a); URL.revokeObjectURL(url);
+}
+function copyNote(){
+  const txt=buildSummaryText();
+  const ta=document.createElement('textarea');
+  ta.value=txt; ta.style.position='fixed'; ta.style.opacity='0';
+  document.body.appendChild(ta); ta.select();
+  try{ document.execCommand('copy'); flashBtn('copyBtn','gekopieerd'); }
+  catch(e){ flashBtn('copyBtn','mislukt'); }
+  document.body.removeChild(ta);
+}
+function flashBtn(id,msg){
+  const b=document.getElementById(id); if(!b) return;
+  const old=b.textContent; b.textContent=msg; setTimeout(()=>{ b.textContent=old; },1500);
+}
+
+// ============================================================
+//  ODDS — evenwichtige lines, kies over/under, check de uitkomst
+// ============================================================
+let oddsPicks = {};
+let oddsReveal = {};
+const ODDS_LABEL = { player_reception_yds:'rec yds', player_receptions:'recepties', player_rush_yds:'rush yds' };
+
+function _oddsId(r){ return ((r.season||(D&&D.season)||0)+'_'+r.week+'_'+r.player+'_'+r.market).replace(/[^a-zA-Z0-9]/g,'_'); }
+function pickOdds(id, side){ oddsPicks[id]=side; render(); }
+function revealOdds(id){ oddsReveal[id]=true; render(); }
+
+function oddsPanel(team, wk){
+  const rows = (D.odds||[]).filter(r=>r.team===team && r.week==wk);
+  if(!rows.length) return '';
+  let html = `<div class="panel odds"><h2>${team} \u2014 betting lines <span class="tag">evenwichtig (~-110), week ${wk}</span></h2>`;
+  html += '<table><thead><tr><th>Speler</th><th>Markt</th><th>Line</th><th>O/U</th><th>Jouw keuze</th><th>Uitkomst</th></tr></thead><tbody>';
+  rows.forEach(r=>{
+    const id=_oddsId(r);
+    const pick=oddsPicks[id]; const revealed=oddsReveal[id];
+    const ov = `<button class="ou ${pick==='Over'?'sel':''}" onclick="pickOdds('${id}','Over')">O ${fmt(r.price_over,0)}</button>`;
+    const un = `<button class="ou ${pick==='Under'?'sel':''}" onclick="pickOdds('${id}','Under')">U ${fmt(r.price_under,0)}</button>`;
+    let action;
+    if(!revealed){
+      action = pick ? `<button class="btn-sm" onclick="revealOdds('${id}')">doorgaan \u25b6</button>` : '<span class="dim">kies O of U</span>';
+    } else {
+      if(r.result===null||r.result===undefined){
+        action = '<span class="dim">nog niet gespeeld</span>';
+      } else if(r.result==='Push'){
+        action = `<span class="dim">push (exact ${fmt(r.line,1)})</span>`;
+      } else {
+        const ok = (pick===r.result);
+        const logged = isLogged(id);
+        action = `<span class="${ok?'mu-good':'mu-bad'}">${ok?'\u2713 klopte':'\u2717 fout'} \u2014 ${fmt(r.actual,1)} (${r.result})</span>`
+          + (logged ? ` <span class="dim" style="font-size:11px;">\u00b7 gelogd</span>`
+                    : ` <button class="btn-sm" onclick="logOutcome('${id}')">+ tel mee</button>`);
+      }
+    }
+    html += `<tr>
+      <td class="player-name">${r.player}</td>
+      <td class="dim">${ODDS_LABEL[r.market]||r.market}</td>
+      <td><b>${fmt(r.line,1)}</b></td>
+      <td>${ov} ${un}</td>
+      <td>${pick?`<span class="${pick==='Over'?'trend-up':'trend-down'}">${pick}</span>`:'<span class="dim">\u2013</span>'}</td>
+      <td>${action}</td>
+    </tr>`;
+  });
+  html += '</tbody></table>';
+  html += '<div class="note">Alleen lines waar over \u00e9n under ongeveer -110 zijn \u2014 daar is de markt het minst zeker, dus weegt jouw analyse het zwaarst. Kies een kant en klik doorgaan; bij gespeelde wedstrijden zie je of het klopte. Geen koopadvies.</div></div>';
+  return html;
+}
+
+let state={week:null,home:null,away:null,filterPlayer:null,showLog:false};
+
+// ============================================================
+//  SCORE-TELLER (goed/fout) — blijft bewaard na afsluiten
+// ============================================================
+const SCORE_KEY = 'nfl_terminal_score';
+let scoreState = { good:0, bad:0 };
+function loadScore(){
+  try {
+    const raw = localStorage.getItem(SCORE_KEY);
+    if(raw){
+      const s = JSON.parse(raw);
+      scoreState.good = Math.max(0, parseInt(s.good)||0);
+      scoreState.bad  = Math.max(0, parseInt(s.bad)||0);
+    }
+  } catch(e){ /* localStorage niet beschikbaar of corrupt: begin bij 0 */ }
+  updateScore();
+}
+function saveScore(){
+  try { localStorage.setItem(SCORE_KEY, JSON.stringify(scoreState)); } catch(e){}
+}
+function bumpScore(which, delta){
+  scoreState[which] = Math.max(0, scoreState[which] + delta);
+  saveScore();
+  updateScore();
+}
+function resetScore(){
+  if(!confirm('Weet je zeker dat je de goed/fout-score op nul wilt zetten?')) return;
+  scoreState = { good:0, bad:0 };
+  saveScore();
+  updateScore();
+}
+function updateScore(){
+  const g=document.getElementById('scoreGood'), b=document.getElementById('scoreBad'), p=document.getElementById('scorePct');
+  if(g) g.textContent = scoreState.good;
+  if(b) b.textContent = scoreState.bad;
+  const tot = scoreState.good + scoreState.bad;
+  if(p) p.textContent = tot>0 ? Math.round(scoreState.good/tot*100)+'%' : '\u2013';
+}
+
+// ============================================================
+//  LOGBOEK — gelogde odds-uitkomsten, blijven bewaard
+// ============================================================
+const LOG_KEY = 'nfl_terminal_picklog';
+let pickLog = [];
+function loadLog(){
+  try{
+    const raw=localStorage.getItem(LOG_KEY);
+    if(raw) pickLog=JSON.parse(raw)||[];
+  }catch(e){ pickLog=[]; }
+  // migratie: oude id's misten het seizoen (week_speler_markt) -> seizoen ervoor zetten
+  let changed=false;
+  pickLog.forEach(e=>{
+    if(e && e.id && e.season && !new RegExp('^'+e.season+'_').test(e.id)){
+      e.id = (e.season+'_'+e.id); changed=true;
+    }
+  });
+  if(changed) saveLog();
+}
+function saveLog(){ try{ localStorage.setItem(LOG_KEY, JSON.stringify(pickLog)); }catch(e){} }
+function isLogged(id){ return pickLog.some(e=>e.id===id); }
+function posOf(player, team){
+  const r=(D&&D.player_weekly||[]).find(x=>x.player===player && (!team||x.team===team));
+  return r ? r.pos : '?';
+}
+function logOutcome(id){
+  if(isLogged(id)) return;
+  const r=(D.odds||[]).find(x=>_oddsId(x)===id);
+  if(!r) return;
+  const pick=oddsPicks[id];
+  if(!pick) return;
+  if(r.result===null||r.result===undefined||r.result==='Push') return;
+  const correct = (pick===r.result);
+  pickLog.push({ id, season:D.season, week:r.week, team:r.team, player:r.player, pos:posOf(r.player,r.team),
+    market:ODDS_LABEL[r.market]||r.market, line:r.line, pick, result:r.result, correct, actual:r.actual, ts:Date.now() });
+  scoreState[correct?'good':'bad'] += 1;
+  saveLog(); saveScore(); updateScore(); render();
+}
+function openLog(){ state.showLog=true; state.filterPlayer=null; render(); window.scrollTo({top:0,behavior:'smooth'}); }
+function closeLog(){ state.showLog=false; render(); }
+function clearLog(){
+  if(!confirm('Logboek wissen? Dit verwijdert alle gelogde uitkomsten.')) return;
+  pickLog=[]; saveLog();
+  if(confirm('Ook de goed/fout-teller op nul zetten?')){ scoreState={good:0,bad:0}; saveScore(); updateScore(); }
+  render();
+}
+function buildLogView(){
+  const n=pickLog.length, good=pickLog.filter(e=>e.correct).length;
+  const pct=n?Math.round(good/n*100):0;
+  let html=`<div class="filter-head">
+    <button class="btn back-btn" onclick="closeLog()">\u2190 Terug naar wedstrijd</button>
+    <h2>Logboek</h2>
+    ${n?`<button class="btn" onclick="clearLog()">\u2715 wis logboek</button>`:''}
+  </div>`;
+  if(!n){
+    html+=`<div class="empty">Nog niets gelogd. Kies bij de <b>betting lines</b> een kant, klik <b>doorgaan</b>, en bij een gespeelde wedstrijd verschijnt <b>+ tel mee</b> om die uitkomst hier vast te leggen.</div>`;
+    return html;
+  }
+  html+=`<div class="modal-box filter-box"><div class="modal-body">
+    <div class="stat-grid" style="margin-bottom:20px;">
+      <div class="stat-cell"><div class="v">${n}</div><div class="k">gelogd</div></div>
+      <div class="stat-cell"><div class="v" style="color:var(--green)">${good}</div><div class="k">goed</div></div>
+      <div class="stat-cell"><div class="v" style="color:var(--red)">${n-good}</div><div class="k">fout</div></div>
+      <div class="stat-cell"><div class="v" style="color:var(--accent)">${pct}%</div><div class="k">trefkans</div></div>
+    </div>`;
+  const bd=(title,key)=>{
+    const m={}; pickLog.forEach(e=>{const k=e[key]||'?';(m[k]=m[k]||{g:0,t:0});m[k].t++;if(e.correct)m[k].g++;});
+    const rows=Object.entries(m).sort((a,b)=>b[1].t-a[1].t)
+      .map(([k,v])=>`<tr><td>${k}</td><td>${v.g}/${v.t}</td><td>${Math.round(v.g/v.t*100)}%</td></tr>`).join('');
+    return `<div class="modal-section"><h3>${title}</h3><table><thead><tr><th>${title}</th><th>goed/totaal</th><th>%</th></tr></thead><tbody>${rows}</tbody></table></div>`;
+  };
+  html+=bd('Per markt','market');
+  html+=bd('Per positie','pos');
+  const entries=[...pickLog].sort((a,b)=>b.ts-a.ts).map(e=>`<tr>
+    <td class="dim">${e.season} wk${e.week}</td>
+    <td class="player-name">${e.player}<span class="pos">${e.pos}</span></td>
+    <td class="dim">${e.market}</td>
+    <td>${fmt(e.line,1)}</td>
+    <td>${e.pick}</td>
+    <td><span class="${e.correct?'mu-good':'mu-bad'}">${e.correct?'\u2713':'\u2717'} ${e.result} (${fmt(e.actual,1)})</span></td>
+  </tr>`).join('');
+  html+=`<div class="modal-section"><h3>Alle gelogde uitkomsten</h3>
+    <table><thead><tr><th>Wanneer</th><th>Speler</th><th>Markt</th><th>Line</th><th>Keuze</th><th>Uitkomst</th></tr></thead><tbody>${entries}</tbody></table></div>`;
+  html+=`</div></div>`;
+  return html;
+}
+
+// ============================================================
+//  SPELER-FILTER — dashboard filtert naar 1 (of 2) spelers, met terug-knop
+// ============================================================
+function openPlayer(team, player){
+  state.showLog=false;
+  state.filterPlayer = { team, player, compare:null };
+  render();
+  window.scrollTo({ top: 0, behavior: 'smooth' });
+}
+function clearPlayerFilter(){
+  state.filterPlayer = null;
+  render();
+}
+function setCompare(sel){
+  if(!state.filterPlayer) return;
+  const name = sel.value;
+  if(!name){ state.filterPlayer.compare=null; render(); return; }
+  const tm = teamOfPlayer(name);
+  if(tm) state.filterPlayer.compare = { team:tm, player:name };
+  render();
+}
+function clearCompare(){
+  if(state.filterPlayer){ state.filterPlayer.compare=null; render(); }
+}
+
+// Alle relevante spelers in de huidige wedstrijd (beide teams)
+function matchupPlayers(){
+  const list=[];
+  [state.away, state.home].forEach(tm=>{
+    if(!tm||!D) return;
+    try {
+      playerProfiles(tm, state.week).filter(p=>['WR','TE','RB','QB','FB'].includes(p.pos)).forEach(p=>{
+        if(!list.some(x=>x.name===p.player)) list.push({name:p.player, team:tm, pos:p.pos});
+      });
+    } catch(e){}
+  });
+  return list;
+}
+function teamOfPlayer(name){
+  const m = matchupPlayers().find(x=>x.name===name);
+  return m ? m.team : null;
+}
+function refreshPlayerSearchList(){
+  const dl=document.getElementById('playerSearchList'); if(!dl) return;
+  dl.innerHTML = matchupPlayers()
+    .map(o=>`<option value="${o.name.replace(/"/g,'&quot;')}">${o.team} \u00b7 ${o.pos}</option>`).join('');
+}
+function doPlayerSearch(val){
+  if(!val) return;
+  const players = matchupPlayers();
+  const low=val.toLowerCase();
+  const m = players.find(x=>x.name===val)
+         || players.find(x=>x.name.toLowerCase()===low)
+         || players.find(x=>x.name.toLowerCase().includes(low));
+  const inp=document.getElementById('playerSearch'); if(inp) inp.value='';
+  if(m) openPlayer(m.team, m.name);
+}
+
+// Bouwt de secties (snap, coverage, rushing, matchup, line) voor 1 speler
+function playerDetailSections(team, player){
+  const wk = state.week;
+  const oppTeam = (team===state.home) ? state.away : state.home;
+  const wd = buildWeekData(wk);
+  const p = playerProfiles(team, wk).find(x=>x.player===player);
+  if(!p) return `<div class="empty">Geen data voor ${player} in deze week.</div>`;
+
+  let html = `<div style="color:var(--dim);font-size:12px;margin-bottom:16px;">${team} \u2014 tegen ${oppTeam} \u00b7 alle cijfers ${wkLbl(wk)}</div>`;
+
+  if(p._oldTeams && p._oldTeams.length){
+    html += `<div class="warn-band">\u26a0 Let op: ${p._prevGames} van de ${p.games} wedstrijden hieronder zijn van vorig seizoen bij <b>${p._oldTeams.join(', ')}</b>.
+      Volume-cijfers als target share en snap% horen bij die oude rol \u2014 in een nieuwe offense kan dat flink anders liggen.</div>`;
+  } else if(p._prevGames && p._prevGames===p.games){
+    html += `<div class="warn-band">\u26a0 Alle ${p.games} wedstrijden hieronder komen uit vorig seizoen \u2014 nog geen data in ${D.season}.</div>`;
+  }
+
+  // Snap & vorm
+  html += `<div class="modal-section"><h3>Snap &amp; vorm</h3>
+    <div class="stat-grid">
+      <div class="stat-cell"><div class="v">${fmt(p.snap*100,0)}%</div><div class="k">snap (L3)</div></div>
+      <div class="stat-cell"><div class="v">${fmt(p.targets,1)}</div><div class="k">tgt/game</div></div>
+      <div class="stat-cell"><div class="v">${fmt(p.tgt_share*100,0)}%</div><div class="k">target share</div></div>
+      <div class="stat-cell"><div class="v">${fmt(p.rec_yds,0)}</div><div class="k">rec yds/g</div></div>
+      <div class="stat-cell"><div class="v">${fmt(p.rec_yds_l3,0)}</div><div class="k">rec yds (L3)</div></div>
+      ${(p.pos==='RB'||p.pos==='QB')?`<div class="stat-cell"><div class="v">${fmt(p.rush_yds,0)}</div><div class="k">rush yds/g</div></div>`:''}
+    </div>
+    <div style="margin-top:12px;display:flex;gap:24px;align-items:center;flex-wrap:wrap;">
+      <div><div class="k" style="font-size:10px;color:var(--dim);margin-bottom:4px;">SNAP% VERLOOP</div>${sparkline(p.snapSeries,'snap','var(--blue)',100)}</div>
+      <div><div class="k" style="font-size:10px;color:var(--dim);margin-bottom:4px;">TARGETS VERLOOP</div>${sparkline(p.snapSeries,'tgt','var(--accent)')}</div>
+    </div></div>`;
+
+  // Coverage (voor WR/TE/RB)
+  const c = wd.playerCov[player];
+  if(c){
+    let man={t:0,y:0}, zone={t:0,y:0};
+    Object.entries(c).forEach(([cov,o])=>{
+      if(MAN_TYPES.includes(cov)){man.t+=o.targets;man.y+=o.yards;}
+      if(ZONE_TYPES.includes(cov)){zone.t+=o.targets;zone.y+=o.yards;}
+    });
+    const cell=(label,o)=>{
+      if(!o||o.targets===0) return `<div class="stat-cell"><div class="v dim">\u2013</div><div class="k">${label}</div></div>`;
+      const thin=o.targets<MIN_COV_TARGETS;
+      return `<div class="stat-cell"><div class="v" style="${thin?'color:var(--dim)':''}">${fmt(o.yards/o.targets,1)}</div><div class="k">${label} (n=${o.targets})</div></div>`;
+    };
+    html += `<div class="modal-section"><h3>Yards per target vs coverage</h3><div class="stat-grid">
+      ${cell('vs Man',{targets:man.t,yards:man.y})}
+      ${cell('vs Zone',{targets:zone.t,yards:zone.y})}
+      ${cell('Cover 1',c['COVER_1'])}
+      ${cell('Cover 2',c['COVER_2'])}
+      ${cell('Cover 3',c['COVER_3'])}
+    </div><div style="font-size:11px;color:var(--dim);margin-top:8px;">Grijs = te weinig data (n&lt;${MIN_COV_TARGETS}). Man/Zone het betrouwbaarst.</div></div>`;
+  }
+
+  // Speelsituaties: yards per target per situatie, afgezet tegen het
+  // eigen gemiddelde van deze speler. Dat maakt het cijfer pas leesbaar:
+  // 9.1 ypt zegt weinig, "+1.8 boven zijn eigen gemiddelde" wel.
+  const ctx = playContextFor(team, player, wk);
+  const ctxKeys = CTX_ORDER.filter(k=>ctx[k] && ctx[k].targets>0);
+  if(ctxKeys.length){
+    // basislijn = alle targets van de speler samen. Shotgun + under center
+    // dekken samen elke pass, dus die twee vormen een sluitend totaal.
+    const sg = ctx.shotgun||{targets:0,yards:0}, uc = ctx.under_center||{targets:0,yards:0};
+    const totT = sg.targets + uc.targets, totY = sg.yards + uc.yards;
+    const basis = totT>0 ? totY/totT : null;
+
+    const cel = (k)=>{
+      const o = ctx[k];
+      const ypt = o.yards/o.targets;
+      const dun = o.targets < MIN_CTX_TARGETS;
+      // Aandeel in zijn totale targets: maakt het volume pas leesbaar.
+      // 42 targets zegt weinig; "41% van al zijn targets" wel.
+      const aandeel = totT>0 ? Math.round(100*o.targets/totT) : null;
+      // De yards/target is een SCHATTING: bij weinig targets is die onbetrouwbaar
+      // en tonen we hem grijs. Het aantal zelf is een telling en dus altijd hard.
+      let yptTxt = `<span style="${dun?'color:var(--dim)':''}">${fmt(ypt,1)} ypt</span>`;
+      if(basis!==null && !dun){
+        const d = ypt - basis;
+        if(Math.abs(d) >= 0.75){
+          yptTxt += `<span class="${d>0?'mu-good-t':'mu-bad-t'}"> ${d>0?'+':''}${fmt(d,1)}</span>`;
+        }
+      }
+      return `<div class="stat-cell">
+        <div class="v">${o.targets}<span class="ctx-unit">tgt</span></div>
+        <div class="k">${CTX_LABELS[k]}${aandeel!==null?` \u00b7 ${aandeel}%`:''}<br>${yptTxt}</div></div>`;
+    };
+    html += `<div class="modal-section"><h3>Targets per speelsituatie</h3>
+      <div class="stat-grid">${ctxKeys.map(cel).join('')}</div>
+      <div class="note">Het grote getal is het <b>aantal targets</b> in die situatie, met daaronder het aandeel in zijn ${totT} targets en de yards per target.
+      ${basis!==null?`Het groene/rode getal is het verschil met zijn eigen gemiddelde van <b>${fmt(basis,1)}</b> ypt. `:''}
+      <span class="thin-t">Grijze ypt</span> = te weinig targets (n&lt;${MIN_CTX_TARGETS}) om iets over efficiëntie te zeggen; het aantal zelf klopt altijd.
+      Let op: deze situaties <b>overlappen</b> \u2014 \u00e9\u00e9n play kan tegelijk shotgun, play-action \u00e9n 3rd down zijn, dus ze tellen niet op tot het totaal.</div></div>`;
+  }
+
+  // Rushing detail (RB)
+  const rb = wd.rbRush[player];
+  if(rb && rb.carries>=3){
+    html += `<div class="modal-section"><h3>Rushing detail</h3><div class="stat-grid">
+      <div class="stat-cell"><div class="v">${fmt(rb.carries,0)}</div><div class="k">carries</div></div>
+      <div class="stat-cell"><div class="v">${fmt(rb.ybc_att,1)}</div><div class="k">YBC/att</div></div>
+      <div class="stat-cell"><div class="v">${fmt(rb.yac_att,1)}</div><div class="k">YAC/att</div></div>
+      <div class="stat-cell"><div class="v">${fmt(rb.broken_pg,1)}</div><div class="k">broken/g</div></div>
+    </div></div>`;
+  }
+
+  // Matchup: hoe verdedigt de tegenstander deze positie
+  const dpos = (wd.teamDef[oppTeam]||{})[p.pos];
+  if(dpos){
+    html += `<div class="modal-section"><h3>Matchup \u2014 ${oppTeam} tegen ${p.pos}</h3><div class="stat-grid">
+      <div class="stat-cell"><div class="v">${fmt(dpos.rec_yds_pg,0)}</div><div class="k">rec yds/g toegestaan</div></div>
+      <div class="stat-cell"><div class="v">#${dpos.rec_yds_rank||'\u2013'}</div><div class="k">rank (1=zwakst)</div></div>
+      ${p.pos==='RB'?`<div class="stat-cell"><div class="v">${fmt(dpos.rush_yds_pg,0)}</div><div class="k">rush yds/g toegestaan</div></div>`:''}
+    </div></div>`;
+  }
+
+  // Betting line
+  const odds = (D.odds||[]).filter(r=>r.player===player && r.week==wk);
+  if(odds.length){
+    let orows = odds.map(r=>{
+      const lbl = ODDS_LABEL[r.market]||r.market;
+      let res = '';
+      if(r.result==='Push') res='<span class="dim">push</span>';
+      else if(r.result) res=`<span class="${r.result==='Over'?'trend-up':'trend-down'}">${r.result} (${fmt(r.actual,1)})</span>`;
+      else res='<span class="dim">nog niet gespeeld</span>';
+      return `<div class="stat-cell" style="text-align:left;"><div class="v" style="font-size:16px;">${lbl} ${fmt(r.line,1)}</div><div class="k">O ${fmt(r.price_over,0)} / U ${fmt(r.price_under,0)} \u00b7 ${res}</div></div>`;
+    }).join('');
+    html += `<div class="modal-section"><h3>Betting line</h3><div class="stat-grid">${orows}</div></div>`;
+  }
+  return html;
+}
+
+function playerColumn(team, player){
+  const p = playerProfiles(team, state.week).find(x=>x.player===player);
+  const pos = p ? p.pos : '';
+  return `<div class="team-scope" style="--team:${teamColor(team)};--team2:${teamColor2(team)}">
+    <div class="modal-box filter-box">
+      <div class="modal-head">${teamLogo(team,'h2-logo')}<h2>${player} <span class="pos">${pos}</span></h2></div>
+      <div class="modal-body">${playerDetailSections(team, player)}</div>
+    </div></div>`;
+}
+
+function buildPlayerDetail(team, player){
+  const cmp = state.filterPlayer && state.filterPlayer.compare;
+  const cmpName = cmp ? cmp.player : '';
+  const others = matchupPlayers().filter(x=>x.name!==player);
+  const opts = ['<option value="">\u2014 vergelijk met\u2026 \u2014</option>']
+    .concat(others.map(o=>`<option value="${o.name.replace(/"/g,'&quot;')}" ${o.name===cmpName?'selected':''}>${o.name} (${o.team} ${o.pos})</option>`))
+    .join('');
+  let head = `<div class="filter-head">
+      <button class="btn back-btn" onclick="clearPlayerFilter()">\u2190 Terug naar wedstrijd</button>
+      <select class="cmp-sel" onchange="setCompare(this)">${opts}</select>
+      ${cmp?`<button class="btn" onclick="clearCompare()">\u2715 vergelijking</button>`:''}
+    </div>`;
+  let body;
+  if(cmp){
+    body = `<div class="compare-grid">${playerColumn(team,player)}${playerColumn(cmp.team,cmp.player)}</div>`;
+  } else {
+    body = playerColumn(team, player);
+  }
+  return head + body;
+}
+
+function render(){
+  const app=document.getElementById('app');
+  const wk=state.week, home=state.home, away=state.away;
+
+  refreshPlayerSearchList();
+  updateHash();
+
+  // Logboek-weergave
+  if(state.showLog){ app.innerHTML = buildLogView(); return; }
+
+  // Gefilterde weergave: 1 of 2 spelers
+  if(state.filterPlayer){
+    const { team, player } = state.filterPlayer;
+    // filter wissen als de speler niet in deze wedstrijd zit
+    if(team!==home && team!==away){ state.filterPlayer=null; }
+    else { app.innerHTML = buildPlayerDetail(team, player); return; }
+  }
+
+  const wd=buildWeekData(wk);
+  const sigAway = detectSignals(away, home, wk, wd);
+  const sigHome = detectSignals(home, away, wk, wd);
+  let html=`<div class="matchup-head">
+    <div class="team-badge" style="--team:${teamColor(away)};--team2:${teamColor2(away)}">
+      ${teamLogo(away,'team-logo')}<span class="team-code">${away||'?'}</span></div>
+    <div class="vs">@</div>
+    <div class="team-badge" style="--team:${teamColor(home)};--team2:${teamColor2(home)}">
+      ${teamLogo(home,'team-logo')}<span class="team-code">${home||'?'}</span></div>
+  </div>`;
+  html+=`<div class="toolbar"><button class="btn" id="copyBtn" onclick="copyNote()">\ud83d\udccb Kopieer samenvatting</button><button class="btn" onclick="downloadNote()">\u2b07 Download notitie (.txt)</button><button class="btn" onclick="window.print()">\ud83d\udda8 Print / PDF</button><button class="btn" onclick="openLog()">\ud83d\udcd3 Logboek${pickLog.length?` (${pickLog.length})`:''}</button></div>`;
+  const rangeTxt = windowWeeks>0
+    ? `stats van de <b>laatste ${windowWeeks} weken</b> (t/m week ${wk>1?wk-1:'\u2013'}, telt door over seizoenen)`
+    : `alle stats <b>${wk>1?'t/m week '+(wk-1):'(week 1 \u2014 geen voorgaande data)'}</b>`;
+  html+=`<div class="legend">Analyse-tool, geen voorspeller. ${rangeTxt} \u2014 je ziet alleen wat je v\u00f3\u00f3r de wedstrijden van week ${wk} wist.</div>`;
+  // Samenvatting: wat springt eruit?
+  const allNotes = sigAway.notes.concat(sigHome.notes);
+  if(allNotes.length){
+    html+=`<div class="summary"><div class="summary-head">\u26a1 Wat springt eruit</div><ul>${allNotes.map(x=>`<li>${x}</li>`).join('')}</ul>
+      <div class="summary-foot">Signalen die opvallen \u2014 geen advies. Ga zelf de panelen in om ze te wegen.</div></div>`;
+  } else {
+    html+=`<div class="summary summary-quiet">Geen sterke signalen deze week \u2014 bekijk de panelen zelf.</div>`;
+  }
+  html+=`<div class="grid2">
+    <div>
+      ${ts(away, injuryPanel(away,wk))}
+      ${ts(away, vacatedPanel(away,wk))}
+      ${ts(home, defenseProfilePanel(home,wd))}
+      ${ts(home, runDefensePanel(home,wd))}
+      ${ts(home, passDefensePanel(home,wd))}
+      ${ts(home, defensePanel(home,wd))}
+      ${ts(away, formationPanel(away,wd))}
+      ${ts(away, rushingPanel(away,wk,wd))}
+      ${ts(away, playerPanel(away,wk,sigAway))}
+      ${ts(away, coveragePanel(away,home,wk,wd))}
+      ${ts(away, playSituationPanel(away,home,wk,wd))}
+      ${ts(away, oddsPanel(away,wk))}
+    </div>
+    <div>
+      ${ts(home, injuryPanel(home,wk))}
+      ${ts(home, vacatedPanel(home,wk))}
+      ${ts(away, defenseProfilePanel(away,wd))}
+      ${ts(away, runDefensePanel(away,wd))}
+      ${ts(away, passDefensePanel(away,wd))}
+      ${ts(away, defensePanel(away,wd))}
+      ${ts(home, formationPanel(home,wd))}
+      ${ts(home, rushingPanel(home,wk,wd))}
+      ${ts(home, playerPanel(home,wk,sigHome))}
+      ${ts(home, coveragePanel(home,away,wk,wd))}
+      ${ts(home, playSituationPanel(home,away,wk,wd))}
+      ${ts(home, oddsPanel(home,wk))}
+    </div></div>`;
+  app.innerHTML=html;
+}
+
+function setSeason(year){
+  D = window.NFL_SEASONS[String(year)];
+  _weekCache = {};               // cache leegmaken: andere data
+  state.filterPlayer = null;     // filter wissen bij nieuw seizoen
+  state.showLog = false;
+  document.getElementById('seasonInfo').textContent =
+    `seizoen ${D.season} \u00b7 ${D.teams.length} teams \u00b7 week-voor-week`;
+  // week-dropdown opnieuw vullen
+  const weeks = D.weeks;
+  // Standaardweek: de eerstvolgende NIET gespeelde week. Bij een afgelopen
+  // seizoen is dat de laatste week; bij een lopend seizoen de actuele week.
+  const gespeeld = (D.player_weekly||[]).map(r=>+r.week);
+  const laatstGespeeld = gespeeld.length ? Math.max(...gespeeld) : 0;
+  const kandidaat = weeks.filter(w=>w>laatstGespeeld);
+  state.week = kandidaat.length ? kandidaat[0] : weeks[weeks.length-1];
+  const weekSel = document.getElementById('weekSel');
+  weekSel.innerHTML = weeks.map(w=>`<option value="${w}" ${w===state.week?'selected':''}>Week ${w}</option>`).join('');
+
+  // Nog geen eigen data vóór deze week? Dan is "alles tot nu" leeg. Zet het
+  // bereik automatisch op 4 weken, zodat eind vorig seizoen meetelt.
+  const eigenData = (D.player_weekly||[]).some(r=>+r.week < state.week);
+  if(!eigenData && windowWeeks<=0){
+    windowWeeks = 4;
+    const rs = document.getElementById('rangeSel');
+    if(rs) rs.value = '4';
+    _weekCache = {};
+  }
+
+  // team-dropdowns opnieuw vullen
+  const awaySel = document.getElementById('awaySel');
+  const homeSel = document.getElementById('homeSel');
+  awaySel.innerHTML = D.teams.map(t=>`<option value="${t}">${t}</option>`).join('');
+  homeSel.innerHTML = D.teams.map(t=>`<option value="${t}">${t}</option>`).join('');
+  fillGames(); syncManual(); render();
+}
+
+function fillGames(){
+  const wk = parseInt(document.getElementById('weekSel').value);
+  const games = D.schedule.filter(g=>g.week==wk);
+  const sel = document.getElementById('gameSel');
+  if(games.length){
+    sel.innerHTML = games.map((g,i)=>`<option value="${i}">${g.away_team} @ ${g.home_team}</option>`).join('');
+    sel.disabled = false; state.away = games[0].away_team; state.home = games[0].home_team;
+  } else { sel.innerHTML = `<option>geen schema</option>`; sel.disabled = true; }
+}
+function syncManual(){
+  document.getElementById('awaySel').value = state.away;
+  document.getElementById('homeSel').value = state.home;
+}
+
+function readHash(){
+  const h=location.hash.replace(/^#/,''); if(!h) return {};
+  const o={}; h.split('&').forEach(kv=>{ const i=kv.indexOf('='); if(i>0){ o[kv.slice(0,i)]=decodeURIComponent(kv.slice(i+1)); } }); return o;
+}
+function updateHash(){
+  if(!D) return;
+  const s=state;
+  const parts=[`s=${D.season}`,`w=${s.week}`,`a=${s.away}`,`h=${s.home}`];
+  if(windowWeeks>0) parts.push(`r=${windowWeeks}`);
+  if(s.filterPlayer){
+    parts.push(`p=${encodeURIComponent(s.filterPlayer.player)}`,`pt=${s.filterPlayer.team}`);
+    if(s.filterPlayer.compare){ parts.push(`c=${encodeURIComponent(s.filterPlayer.compare.player)}`,`ct=${s.filterPlayer.compare.team}`); }
+  }
+  try{ history.replaceState(null,'','#'+parts.join('&')); }catch(e){}
+}
+function applyHashSelection(hs){
+  if(!hs || !Object.keys(hs).length) return;
+  if(hs.w && D.weeks.includes(parseInt(hs.w))) state.week=parseInt(hs.w);
+  if(hs.r){ windowWeeks=parseInt(hs.r)||0; _weekCache={}; }
+  const weekSel=document.getElementById('weekSel'); if(weekSel) weekSel.value=state.week;
+  const rangeSel=document.getElementById('rangeSel'); if(rangeSel) rangeSel.value=String(windowWeeks);
+  fillGames();
+  if(hs.a && D.teams.includes(hs.a)) state.away=hs.a;
+  if(hs.h && D.teams.includes(hs.h)) state.home=hs.h;
+  syncManual();
+  if(D.schedule){
+    const games=D.schedule.filter(g=>g.week==state.week);
+    const gi=games.findIndex(g=>g.away_team===state.away && g.home_team===state.home);
+    const gameSel=document.getElementById('gameSel'); if(gameSel && gi>=0) gameSel.value=String(gi);
+  }
+  if(hs.p && hs.pt){
+    state.filterPlayer={team:hs.pt, player:hs.p, compare:null};
+    if(hs.c && hs.ct) state.filterPlayer.compare={team:hs.ct, player:hs.c};
+  }
+  render();
+}
+
+function buildControls(){
+  const seasons = Object.keys(window.NFL_SEASONS).map(s=>parseInt(s)).sort((a,b)=>a-b);
+  const latest = seasons[seasons.length-1];
+
+  const wrap = document.querySelector('.wrap');
+  const ctrl = document.createElement('div');
+  ctrl.className = 'controls';
+  ctrl.innerHTML = `
+    <div class="ctrl"><label>Seizoen</label>
+      <select id="seasonSel">${seasons.map(s=>`<option value="${s}" ${s===latest?'selected':''}>${s}</option>`).join('')}</select></div>
+    <div class="ctrl"><label>Week</label><select id="weekSel"></select></div>
+    <div class="ctrl"><label>Wedstrijd</label><select id="gameSel"></select></div>
+    <div class="ctrl"><label>of handmatig \u2014 uit</label><select id="awaySel"></select></div>
+    <div class="ctrl"><label>thuis</label><select id="homeSel"></select></div><div class="ctrl"><label>databereik</label><select id="rangeSel"><option value="0">alles tot nu</option><option value="4">laatste 4 weken</option><option value="6">laatste 6 weken</option><option value="8">laatste 8 weken</option></select></div><div class="ctrl"><label>zoek speler</label><input id="playerSearch" list="playerSearchList" placeholder="naam\u2026" autocomplete="off"><datalist id="playerSearchList"></datalist></div>`;
+  wrap.insertBefore(ctrl, document.getElementById('app'));
+
+  document.getElementById('seasonSel').addEventListener('change', e=>setSeason(parseInt(e.target.value)));
+  document.getElementById('weekSel').addEventListener('change', e=>{ state.filterPlayer=null; state.showLog=false; state.week=parseInt(e.target.value); fillGames(); syncManual(); render(); });
+  document.getElementById('gameSel').addEventListener('change', e=>{
+    state.filterPlayer=null; state.showLog=false;
+    const wk=parseInt(document.getElementById('weekSel').value);
+    const g=D.schedule.filter(x=>x.week==wk)[parseInt(e.target.value)];
+    if(g){ state.away=g.away_team; state.home=g.home_team; syncManual(); render(); }
+  });
+  document.getElementById('awaySel').addEventListener('change', e=>{ state.filterPlayer=null; state.showLog=false; state.away=e.target.value; render(); });
+  document.getElementById('homeSel').addEventListener('change', e=>{ state.filterPlayer=null; state.showLog=false; state.home=e.target.value; render(); });
+  document.getElementById('rangeSel').addEventListener('change', e=>{ windowWeeks=parseInt(e.target.value); _weekCache={}; render(); });
+  const ps=document.getElementById('playerSearch');
+  ps.addEventListener('change', ()=>doPlayerSearch(ps.value));
+  ps.addEventListener('keydown', e=>{ if(e.key==='Enter'){ e.preventDefault(); doPlayerSearch(ps.value); } });
+
+  const hs = readHash();
+  const startSeason = (hs.s && window.NFL_SEASONS[hs.s]) ? parseInt(hs.s) : latest;
+  setSeason(startSeason);
+  applyHashSelection(hs);
+}
+
+function hideSplash(){
+  const s=document.getElementById('splash');
+  if(s){ s.classList.add('hide'); setTimeout(()=>{ s.style.display='none'; }, 550); }
+}
+
+if(!window.NFL_SEASONS || !Object.keys(window.NFL_SEASONS).length){
+  const msg=document.getElementById('splashMsg');
+  if(msg) msg.innerHTML='\u26a0 Geen seizoensdata gevonden.<br>Draai de builder en zet dashboard_data_2025.js in dezelfde map.';
+  const fill=document.querySelector('.splash-fill'); if(fill) fill.style.animation='none';
+  document.getElementById('app').innerHTML =
+    '<div class="empty">\u26a0 Geen seizoensdata gevonden. Draai de builder (bv. <b>--season 2025</b>) en zorg dat <b>dashboard_data_2025.js</b> in dezelfde map staat.</div>';
+} else {
+  try { loadScore(); loadLog(); buildControls(); hideSplash(); }
+  catch(err){
+    hideSplash();
+    document.getElementById('app').innerHTML =
+      '<div class="empty">\u26a0 Fout: <b>'+err.message+'</b><br>Open console (F12) voor details.</div>';
+    console.error(err);
+  }
+}
+</script>
+</body>
+</html>
