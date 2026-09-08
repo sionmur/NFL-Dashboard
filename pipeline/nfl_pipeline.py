@@ -19,7 +19,9 @@ WAT HET DAARUIT AFLEIDT
     form_profile_weekly shotgun/under center per team
 WAT HET NIET KAN AFLEIDEN (overnemen met --keep-from)
     player_cov_weekly, def_profile_weekly, def_pos_weekly, form_prod_weekly,
-    injuries, vacated -- coverage-charting zit niet in nflverse.
+    vacated -- coverage-charting zit niet in nflverse.
+    (injuries wordt sinds sep 2026 wel vers opgehaald uit nflverse; --keep-from
+    is alleen nog de fallback als het seizoen nog niet begonnen is.)
 
 ODDS
     Player-prop odds komen van the-odds-api.com. Elke run van 'odds' schrijft
@@ -81,6 +83,7 @@ URLS = {
     "roster":   BASE + "/rosters/roster_{s}.csv",
     "stats":    BASE + "/stats_player/stats_player_week_{s}.csv",
     "snaps":    BASE + "/snap_counts/snap_counts_{s}.csv",
+    "injuries": BASE + "/injuries/injuries_{s}.csv",
     "pbp":      BASE + "/pbp/play_by_play_{s}.csv.gz",
     "ftn_csv":  BASE + "/ftn_charting/ftn_charting_{s}.csv",
     "ftn":      BASE + "/ftn_charting/ftn_charting_{s}.parquet",
@@ -304,6 +307,59 @@ def bouw_roster(season):
         print("  LET OP: gemiddeld >30 skill-spelers per team -- dat wijst op een "
               "voorseizoensroster (90 man). Draai opnieuw na de roster cuts eind "
               "augustus en nog eens na week 1.", file=sys.stderr)
+    return out
+
+
+INJ_REPORT = {"Out", "Doubtful", "Questionable"}
+INJ_PRACTICE = {
+    "Did Not Participate In Practice": "DNP",
+    "Limited Participation in Practice": "Limited",
+}
+
+
+def bouw_injuries(season):
+    """Injury reports uit nflverse (per speler per week).
+
+    Vroeg in de week is er alleen een practice-rapport (report_status leeg); de
+    game-status (Out/Doubtful/Questionable) komt er vrijdag bij. We tonen allebei:
+    een echte game-status wint, anders 'DNP'/'Limited' op basis van de training.
+    """
+    print("injury reports...")
+    raw = haal(URLS["injuries"].format(s=season), verplicht=False, wat="injuries")
+    if raw is None:
+        return []
+    laatste = {}
+    for r in lees_csv(raw):
+        naam = (r.get("full_name") or "").strip()
+        if not naam:
+            continue
+        rep = (r.get("report_status") or "").strip().title()
+        prac = (r.get("practice_status") or "").strip()
+        if rep in INJ_REPORT:
+            status = rep
+        elif prac in INJ_PRACTICE:
+            status = INJ_PRACTICE[prac]
+        else:
+            continue                       # volledige training, geen melding
+        prim = (r.get("report_primary_injury") or r.get("practice_primary_injury") or "").strip()
+        sec = (r.get("report_secondary_injury") or r.get("practice_secondary_injury") or "").strip()
+        blessure = " / ".join(x for x in (prim, sec) if x)
+        wk = f(r.get("week"))
+        laatste[(wk, naam)] = {
+            "week": wk,
+            "team": fix_team(r.get("team")),
+            "player": naam,
+            "pos": (r.get("position") or "").strip().upper(),
+            "status": status,
+            "injury": blessure,
+        }
+    out = sorted(laatste.values(), key=lambda x: (x["week"], x["team"], x["player"]))
+    if out:
+        weken = sorted({int(r["week"]) for r in out})
+        games = sum(1 for r in out if r["status"] in INJ_REPORT)
+        print(f"  {len(out)} regels ({games} game-status), week {weken[0]}-{weken[-1]}")
+    else:
+        print("  geen regels (nog geen rapporten deze week?)")
     return out
 
 
@@ -858,6 +914,12 @@ def cmd_build(args):
                 data[k] = oud[k]
                 print(f"  {k}: {len(oud[k])} regels behouden")
 
+    # injury reports vers ophalen -- wint van de overgenomen tabel; lukt het niet
+    # (404 voor het seizoen begint), dan blijft wat er uit --keep-from kwam staan
+    verse_inj = bouw_injuries(s)
+    if verse_inj:
+        data["injuries"] = verse_inj
+
     # ---- odds ----
     if args.odds_json:
         po = Path(args.odds_json)
@@ -958,6 +1020,35 @@ def huidige_week():
     return season, week
 
 
+def patch_injuries(season, out_path, backup=True):
+    """Haalt verse injury reports op en patcht alleen die tabel in een bestaand
+    dashboard_data_<jaar>.js. Voor als de rest nog niet te bouwen is (voorseizoen)."""
+    out = Path(out_path)
+    if not out.exists():
+        print(f"{out} bestaat niet -- niks te patchen", file=sys.stderr)
+        return 0
+    data = lees_bestaand(out)
+    if not data:
+        return 0
+    verse = bouw_injuries(season)
+    if not verse:
+        print("geen verse injury-data -- bestand ongewijzigd")
+        return 0
+    data["injuries"] = verse
+    schrijf_seizoen(out, season, data, backup=backup)
+    print(f"geschreven: {out.name} -- injuries: {len(verse)} regels "
+          f"({out.stat().st_size/1024:.0f} KB)")
+    return len(verse)
+
+
+def cmd_injuries(args):
+    season = args.season or huidige_week()[0]
+    here = Path(args.dir).resolve() if getattr(args, "dir", None) else Path(__file__).resolve().parent
+    out = here / f"dashboard_data_{season}.js"
+    patch_injuries(season, out, backup=not args.no_backup)
+    print("\nKlaar. Ververs het dashboard met Ctrl+Shift+R.")
+
+
 def cmd_weekly(args):
     # --dir: waar de dashboard_data_<jaar>.js en data/ staan. Standaard naast dit
     # script (laptop); de cloud-workflow zet dit op de repo-root.
@@ -1009,8 +1100,15 @@ def cmd_weekly(args):
         boodschap = " ".join(str(e).split())
         # Vóór week 1 bestaan de statistieken nog niet -- geen fout, niks te doen.
         if "nog niet begonnen" in boodschap or "Niet gevonden" in boodschap:
-            note(f"nog geen data voor week {week} ({boodschap}) -- niets te herbouwen")
-            note("=== klaar (geen update nodig) ===")
+            note(f"nog geen speler-stats voor week {week} ({boodschap})")
+            # de rest kan nog niet, maar de injury reports vaak al wel -- die los patchen
+            try:
+                n = patch_injuries(season, out, backup=True)
+                if n:
+                    note(f"injury reports los bijgewerkt ({n} regels)")
+            except Exception as e:
+                note(f"injury-patch mislukt: {e}")
+            note("=== klaar (alleen injuries) ===")
             return
         note(f"build gestopt ({boodschap})")
         sys.exit(1)
@@ -1053,6 +1151,15 @@ def main():
                     help="doorgaan ondanks te veel niet-gekoppelde odds-namen")
     pb.add_argument("--no-backup", action="store_true")
     pb.set_defaults(func=cmd_build)
+
+    pi = sub.add_parser("injuries",
+                        help="alleen de injury-tabel bijwerken in een bestaand bestand")
+    pi.add_argument("--season", type=int, default=None,
+                    help="seizoensjaar, standaard huidig")
+    pi.add_argument("--dir", default=None,
+                    help="map met de dashboard_data_<jaar>.js (standaard: naast dit script)")
+    pi.add_argument("--no-backup", action="store_true")
+    pi.set_defaults(func=cmd_injuries)
 
     pc = sub.add_parser("context",
                         help="alleen play_context bijwerken in een bestaand bestand")
