@@ -1,0 +1,41 @@
+name: Injury report refresh
+
+# De volledige wekelijkse run is donderdag; de officiele game-status
+# (Out/Doubtful/Questionable) van de NFL komt er pas vrijdagavond bij. Dit
+# werkt daarom alleen de injury-tabel bij op vrijdagavond + zaterdag + zondag,
+# zodat het rapport voor de zondagwedstrijden actueel is.
+on:
+  schedule:
+    - cron: "0 22 * * 5"   # vrijdag 22:00 UTC — na de finale game-status
+    - cron: "0 13 * * 6"   # zaterdag 13:00 UTC
+    - cron: "0 13 * * 0"   # zondag 13:00 UTC — vlak voor de vroege kickoffs
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: weekly-update      # deelt de lock met de donderdag-run
+  cancel-in-progress: false
+
+jobs:
+  injuries:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install --quiet pandas pyarrow
+      - run: python pipeline/nfl_pipeline.py injuries --dir .
+      - name: Commit & push
+        run: |
+          git config user.name  "nfl-dashboard-bot"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A dashboard_data_*.js
+          if git diff --cached --quiet; then
+            echo "Geen wijzigingen."
+          else
+            git commit -m "Injury report $(date -u +%Y-%m-%d\ %H:%M)"
+            git push
+          fi

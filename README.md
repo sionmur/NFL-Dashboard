@@ -75,8 +75,10 @@ opnieuw deployen.
 - Haalt een player-props odds-snapshot (reception yds / receptions / rush yds,
   DraftKings) voor die week op — snapshots worden nooit overschreven
 - Herbouwt `dashboard_data_<seizoen>.js`: spelersstatistieken, play-by-play-
-  splitsingen, verdedigingstabellen, en wikkelt alle odds-snapshots af tot
-  closing lines met Over/Under/Push
+  splitsingen, verdedigingstabellen, verse injury reports uit nflverse, en
+  wikkelt alle odds-snapshots af tot closing lines met Over/Under/Push
+- De injury-tabel wordt daarnaast vr/za/zo apart ververst (`injuries.yml`),
+  want de officiele NFL game-status komt er pas na donderdag bij
 
 **Coverage- en defensie-profiel-panelen** hebben charting-data nodig die de
 pijplijn niet zelf kan maken (zoals bij seizoen 2025 handmatig aangeleverd).
@@ -90,6 +92,7 @@ Zonder die bron blijven die twee panelen leeg; de rest vult vanzelf.
 | `dashboard_data_<jaar>.js` | seizoensdata, wekelijks ververst |
 | `logos/` | teamlogo's |
 | `data/raw_odds/` | opgeslagen odds-snapshots (input voor het afwikkelen) |
-| `pipeline/nfl_pipeline.py` | `odds` / `build` / `context` / `weekly` |
+| `pipeline/nfl_pipeline.py` | `odds` / `build` / `context` / `injuries` / `weekly` |
 | `functions/_middleware.js` | wachtwoord-slot op Cloudflare |
-| `.github/workflows/weekly.yml` | donderdag-cron |
+| `.github/workflows/weekly.yml` | donderdag-cron (volledige herbouw) |
+| `.github/workflows/injuries.yml` | vr/za/zo-cron (alleen de injury-tabel verversen) |
