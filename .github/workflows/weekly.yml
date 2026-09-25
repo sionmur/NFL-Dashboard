@@ -27,7 +27,9 @@ jobs:
           python-version: "3.12"
 
       - name: Dependencies
-        run: pip install --quiet pandas pyarrow
+        run: |
+          pip install --quiet pandas pyarrow playwright
+          playwright install --with-deps chromium
 
       - name: Run weekly pipeline
         env:

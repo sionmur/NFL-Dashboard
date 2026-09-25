@@ -18,10 +18,13 @@ WAT HET DAARUIT AFLEIDT
     rb_rush_weekly      carries en rushing yards per RB
     form_profile_weekly shotgun/under center per team
 WAT HET NIET KAN AFLEIDEN (overnemen met --keep-from)
-    player_cov_weekly, def_profile_weekly, def_pos_weekly, form_prod_weekly,
-    vacated -- coverage-charting zit niet in nflverse.
+    player_cov_weekly, form_prod_weekly, vacated -- coverage-charting/participation
+    zit niet in nflverse tijdens het lopende seizoen (pas maanden na afloop).
     (injuries wordt sinds sep 2026 wel vers opgehaald uit nflverse; --keep-from
     is alleen nog de fallback als het seizoen nog niet begonnen is.)
+    (def_profile_weekly/def_pos_weekly komen sinds sep 2026 als season-to-date
+    momentopname van sharpfootballanalysis.com -- zie bouw_sharp_dekking().
+    Vereist playwright. --keep-from blijft de fallback voor oudere weken.)
 
 ODDS
     Player-prop odds komen van the-odds-api.com. Elke run van 'odds' schrijft
@@ -51,10 +54,18 @@ ODDS
   4. Wekelijkse update  (voor de geplande taak op donderdagochtend)
      python nfl_pipeline.py weekly
         bepaalt zelf seizoen + eerstvolgende week uit het speelschema, haalt een
-        odds-snapshot (als ODDS_API_KEY gezet is) en herbouwt
-        dashboard_data_<seizoen>.js. Logt naar weekly_update.log.
+        odds-snapshot (als ODDS_API_KEY gezet is), een coverage-snapshot en
+        herbouwt dashboard_data_<seizoen>.js. Logt naar weekly_update.log.
+
+  5. Alleen coverage-schemes/coverage-per-positie bijwerken
+     python nfl_pipeline.py sharp
+        haalt alleen def_profile_weekly/def_pos_weekly vers op van
+        sharpfootballanalysis.com (season-to-date snapshot voor de huidige week).
 
 VEREIST:  pip install pandas      (pyarrow is optioneel: fallback voor FTN)
+          pip install playwright && playwright install chromium
+                                     (optioneel: voor de coverage-snapshot,
+                                     zie commando 5 hierboven)
 """
 
 import argparse
@@ -90,6 +101,16 @@ URLS = {
 }
 SCHEDULE_URL = "https://raw.githubusercontent.com/nflverse/nfldata/master/data/games.csv"
 
+# nflverse publiceert coverage-schemes/personeelsdata (participation-dataset) pas
+# na afloop van het seizoen -- tijdens het lopende seizoen dus altijd leeg. Sharp
+# Football Analysis houdt een gratis, tijdens het seizoen bijgewerkte versie bij
+# (season-to-date percentages, geen losse week-increments). Geen CSV/API: de
+# tabellen worden client-side geladen, vandaar Playwright i.p.v. een simpele GET.
+SHARP_URLS = {
+    "cov_scheme": "https://www.sharpfootballanalysis.com/stats-nfl/nfl-coverage-schemes/",
+    "cov_pos":    "https://www.sharpfootballanalysis.com/stats-nfl/nfl-coverage-stats-by-position/",
+}
+
 SKILL = {"QB", "RB", "FB", "WR", "TE"}
 # ACT = actief, RES = injured reserve (kan terugkomen), E14 = practice-squad-achtig.
 ACTIEF = {"ACT", "RES", "E14"}
@@ -100,6 +121,21 @@ TEAM_FIX = {
     "AZ": "ARI", "BLT": "BAL", "CLV": "CLE", "HST": "HOU",
     "SL": "LA", "STL": "LA", "LAR": "LA", "SD": "LAC",
     "OAK": "LV", "RAI": "LV", "WSH": "WAS", "WFT": "WAS", "JAC": "JAX",
+}
+
+# Sharp Football Analysis gebruikt volledige teamnamen i.p.v. afkortingen.
+TEAM_NAME_TO_CODE = {
+    "Arizona Cardinals": "ARI", "Atlanta Falcons": "ATL", "Baltimore Ravens": "BAL",
+    "Buffalo Bills": "BUF", "Carolina Panthers": "CAR", "Chicago Bears": "CHI",
+    "Cincinnati Bengals": "CIN", "Cleveland Browns": "CLE", "Dallas Cowboys": "DAL",
+    "Denver Broncos": "DEN", "Detroit Lions": "DET", "Green Bay Packers": "GB",
+    "Houston Texans": "HOU", "Indianapolis Colts": "IND", "Jacksonville Jaguars": "JAX",
+    "Kansas City Chiefs": "KC", "Las Vegas Raiders": "LV", "Los Angeles Chargers": "LAC",
+    "Los Angeles Rams": "LA", "Miami Dolphins": "MIA", "Minnesota Vikings": "MIN",
+    "New England Patriots": "NE", "New Orleans Saints": "NO", "New York Giants": "NYG",
+    "New York Jets": "NYJ", "Philadelphia Eagles": "PHI", "Pittsburgh Steelers": "PIT",
+    "San Francisco 49ers": "SF", "Seattle Seahawks": "SEA", "Tampa Bay Buccaneers": "TB",
+    "Tennessee Titans": "TEN", "Washington Commanders": "WAS",
 }
 
 # Tabellen die dit script niet kan maken (coverage-charting). Met --keep-from
@@ -361,6 +397,89 @@ def bouw_injuries(season):
     else:
         print("  geen regels (nog geen rapporten deze week?)")
     return out
+
+
+def _sharp_tabel(page, url):
+    """Haalt de rijen van 1 wpDataTable-pagina op sharpfootballanalysis.com op.
+
+    De tabel wordt client-side gevuld (geen CSV/API) -- vandaar Playwright i.p.v.
+    een simpele GET. Kolomvolgorde ligt vast per pagina, dus we lezen posities.
+    """
+    page.goto(url, wait_until="networkidle", timeout=45000)
+    page.wait_for_selector("#table_1 tbody tr td", timeout=20000)
+    uit = []
+    for r in page.query_selector_all("#table_1 tbody tr"):
+        cellen = [c.inner_text().strip() for c in r.query_selector_all("td")]
+        if not cellen:
+            continue
+        team = TEAM_NAME_TO_CODE.get(cellen[0])
+        if not team:
+            continue
+        uit.append((team, cellen))
+    return uit
+
+
+def bouw_sharp_dekking(week):
+    """Coverage-schemes (man/zone%) en coverage-per-positie (YPT toegestaan) als
+    season-to-date momentopname van sharpfootballanalysis.com.
+
+    nflverse's participation-dataset (de oorspronkelijke bron van def_profile_weekly
+    /def_pos_weekly) verschijnt pas na afloop van het seizoen -- tijdens het seizoen
+    dus altijd leeg. Sharp geeft alleen season-to-date percentages, geen losse
+    week-increments: elke aanroep levert 1 momentopname-regel per team, getagd met
+    de meegegeven week. Oudere weken moeten door de aanroeper bewaard blijven.
+    Vereist Playwright (pip install playwright && playwright install chromium).
+    """
+    try:
+        from playwright.sync_api import sync_playwright
+    except ImportError:
+        print("  playwright niet geinstalleerd -- coverage-snapshot overgeslagen "
+              "(pip install playwright && playwright install chromium)", file=sys.stderr)
+        return [], []
+
+    print("coverage-schemes & coverage-per-positie (sharpfootballanalysis.com)...")
+    profiel, positie = [], []
+    try:
+        with sync_playwright() as p:
+            browser = p.chromium.launch(headless=True)
+            page = browser.new_page(
+                user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) NFLDashboardBot/1.0")
+            for team, c in _sharp_tabel(page, SHARP_URLS["cov_scheme"]):
+                if len(c) < 5:
+                    continue
+                profiel.append({
+                    "team": team, "week": week,
+                    "man_pct": f(c[1]), "zone_pct": f(c[2]),
+                    "mof_closed_pct": f(c[3]), "mof_open_pct": f(c[4]),
+                })
+            for team, c in _sharp_tabel(page, SHARP_URLS["cov_pos"]):
+                if len(c) < 6:
+                    continue
+                positie.append({
+                    "team": team, "week": week,
+                    "ypt_wr": f(c[1]), "ypt_te": f(c[2]), "ypt_rb": f(c[3]),
+                    "ypt_outside": f(c[4]), "ypt_slot": f(c[5]),
+                })
+            browser.close()
+    except Exception as e:
+        print(f"  sharpfootballanalysis.com mislukt: {e}", file=sys.stderr)
+        return [], []
+
+    print(f"  coverage-schemes: {len(profiel)} teams | "
+          f"coverage-per-positie: {len(positie)} teams (week {week})")
+    return profiel, positie
+
+
+def voeg_sharp_snapshot_toe(oud_profiel, oud_positie, week):
+    """Haalt de huidige week se momentopname op en zet die erbij, met vervanging
+    van een eerdere opname van diezelfde week (bijv. bij een herrun dezelfde dag).
+    Oudere weken (die Sharp niet meer teruggeeft) blijven staan."""
+    profiel, positie = bouw_sharp_dekking(week)
+    if profiel:
+        oud_profiel = [r for r in oud_profiel if r.get("week") != week] + profiel
+    if positie:
+        oud_positie = [r for r in oud_positie if r.get("week") != week] + positie
+    return oud_profiel, oud_positie
 
 
 def bouw_schedule(season):
@@ -920,6 +1039,17 @@ def cmd_build(args):
     if verse_inj:
         data["injuries"] = verse_inj
 
+    # ---- coverage-schemes / coverage-per-positie (sharpfootballanalysis.com) ----
+    # Momentopname getagd met de meest recente week waarvoor we al statistieken
+    # hebben; oudere weken (uit --keep-from) blijven staan. Let op: data["weeks"]
+    # is het hele speelschema (1-18, ook nog niet gespeelde weken) -- dat is dus
+    # NIET bruikbaar om "de huidige week" te bepalen. Gebruik i.p.v. daarvan de
+    # laatste week waar echt spelersstatistieken voor zijn.
+    snapshot_week = max((r["week"] for r in stats), default=None)
+    if snapshot_week:
+        data["def_profile_weekly"], data["def_pos_weekly"] = voeg_sharp_snapshot_toe(
+            data.get("def_profile_weekly", []), data.get("def_pos_weekly", []), snapshot_week)
+
     # ---- odds ----
     if args.odds_json:
         po = Path(args.odds_json)
@@ -1049,6 +1179,48 @@ def cmd_injuries(args):
     print("\nKlaar. Ververs het dashboard met Ctrl+Shift+R.")
 
 
+def patch_sharp(season, out_path, week, backup=True):
+    """Haalt een verse coverage-snapshot op en patcht alleen def_profile_weekly
+    en def_pos_weekly in een bestaand dashboard_data_<jaar>.js."""
+    out = Path(out_path)
+    if not out.exists():
+        print(f"{out} bestaat niet -- niks te patchen", file=sys.stderr)
+        return False
+    data = lees_bestaand(out)
+    if not data:
+        return False
+    profiel, positie = voeg_sharp_snapshot_toe(
+        data.get("def_profile_weekly", []), data.get("def_pos_weekly", []), week)
+    if not profiel and not positie:
+        print("geen verse coverage-data -- bestand ongewijzigd")
+        return False
+    data["def_profile_weekly"], data["def_pos_weekly"] = profiel, positie
+    schrijf_seizoen(out, season, data, backup=backup)
+    print(f"geschreven: {out.name} -- coverage-snapshot week {week} "
+          f"({out.stat().st_size/1024:.0f} KB)")
+    return True
+
+
+def cmd_sharp(args):
+    if args.season and args.week:
+        season, week = args.season, args.week
+    else:
+        # huidige_week() geeft de eerstvolgende NIET-gespeelde week -- Sharp's
+        # season-to-date cijfers weerspiegelen de stand t/m de laatst AFGERONDE
+        # week, dus 1 eraf. Anders wordt de snapshot getagd met een week die nog
+        # moet beginnen en valt hij buiten elk "t/m die week"-filter in het
+        # dashboard (r.week<W sluit r.week==W juist uit).
+        season, next_week = huidige_week()
+        week = next_week - 1
+    if week < 1:
+        print(f"week {week} nog niet gespeeld -- coverage-snapshot overgeslagen", file=sys.stderr)
+        return
+    here = Path(args.dir).resolve() if getattr(args, "dir", None) else Path(__file__).resolve().parent
+    out = here / f"dashboard_data_{season}.js"
+    patch_sharp(season, out, week, backup=not args.no_backup)
+    print("\nKlaar. Ververs het dashboard met Ctrl+Shift+R.")
+
+
 def cmd_weekly(args):
     # --dir: waar de dashboard_data_<jaar>.js en data/ staan. Standaard naast dit
     # script (laptop); de cloud-workflow zet dit op de repo-root.
@@ -1101,14 +1273,23 @@ def cmd_weekly(args):
         # Vóór week 1 bestaan de statistieken nog niet -- geen fout, niks te doen.
         if "nog niet begonnen" in boodschap or "Niet gevonden" in boodschap:
             note(f"nog geen speler-stats voor week {week} ({boodschap})")
-            # de rest kan nog niet, maar de injury reports vaak al wel -- die los patchen
+            # de rest kan nog niet, maar injury reports en de coverage-snapshot
+            # staan los van nflverse-statistieken -- die alvast los patchen
             try:
                 n = patch_injuries(season, out, backup=True)
                 if n:
                     note(f"injury reports los bijgewerkt ({n} regels)")
             except Exception as e:
                 note(f"injury-patch mislukt: {e}")
-            note("=== klaar (alleen injuries) ===")
+            try:
+                # week is hier de eerstvolgende NIET-gespeelde week (zie boven) --
+                # de coverage-snapshot moet de laatst AFGERONDE week taggen.
+                sharp_week = week - 1
+                if sharp_week >= 1 and patch_sharp(season, out, sharp_week, backup=True):
+                    note(f"coverage-snapshot week {sharp_week} los bijgewerkt")
+            except Exception as e:
+                note(f"coverage-snapshot mislukt: {e}")
+            note("=== klaar (alleen injuries/coverage) ===")
             return
         note(f"build gestopt ({boodschap})")
         sys.exit(1)
@@ -1160,6 +1341,19 @@ def main():
                     help="map met de dashboard_data_<jaar>.js (standaard: naast dit script)")
     pi.add_argument("--no-backup", action="store_true")
     pi.set_defaults(func=cmd_injuries)
+
+    ps = sub.add_parser("sharp",
+                        help="alleen coverage-schemes/coverage-per-positie bijwerken "
+                             "(sharpfootballanalysis.com, vereist playwright)")
+    ps.add_argument("--season", type=int, default=None,
+                    help="seizoensjaar, standaard huidig")
+    ps.add_argument("--week", type=int, default=None,
+                    help="week om de momentopname mee te taggen, standaard de "
+                         "laatst afgeronde week")
+    ps.add_argument("--dir", default=None,
+                    help="map met de dashboard_data_<jaar>.js (standaard: naast dit script)")
+    ps.add_argument("--no-backup", action="store_true")
+    ps.set_defaults(func=cmd_sharp)
 
     pc = sub.add_parser("context",
                         help="alleen play_context bijwerken in een bestaand bestand")

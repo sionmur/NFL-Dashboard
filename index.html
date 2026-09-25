@@ -479,35 +479,29 @@ function buildWeekData(W){
   });
   wd.teamDef=td;
 
-  // ---- def positiegroep ----
+  // ---- coverage-per-positie (season-to-date momentopname, sharpfootballanalysis.com) ----
+  // Geen wekelijkse increments om te sommeren -- pak per team de meest recente
+  // snapshot t/m de gekozen week. Bewust NIET via _rowsFor: dat mengt bij een
+  // gekozen weekvenster ook rijen van het vorige seizoen erbij (zinvol voor
+  // echte week-increments, maar niet voor een cumulatieve snapshot -- anders
+  // kan een oude seizoensrij een gelijke doorlopende week krijgen als de
+  // nieuwe snapshot en die per ongeluk verdringen).
   const dp={};
-  _rowsFor('def_pos_weekly',W).forEach(r=>{
-    const t=(dp[r.team]=dp[r.team]||{});
-    const g=(t[r.group]=t[r.group]||{targets:0,yards:0,cmp:0,prsum:0,prn:0,weeks:new Set()});
-    g.targets+=n(r.targets); g.yards+=n(r.yards_allowed); g.cmp+=n(r.cmp);
-    g.prsum+=n(r.prating_sum); g.prn+=n(r.prating_n); g.weeks.add(r._gw);
+  (D.def_pos_weekly||[]).filter(r=>r.week<W).forEach(r=>{
+    const cur=dp[r.team];
+    if(!cur || r.week>cur.week) dp[r.team]=r;
   });
-  Object.values(dp).forEach(t=>Object.values(t).forEach(g=>{
-    const games=g.weeks.size||1; g.games=games; g.yards_pg=g.yards/games; g.targets_pg=g.targets/games;
-    g.passer_rating=g.prn?g.prsum/g.prn:null;
-  }));
-  ["CB","LB","S"].forEach(grp=>{
-    const arr=Object.entries(dp).filter(([t,o])=>o[grp]).map(([t,o])=>({t,v:o[grp].yards_pg}));
-    arr.sort((a,b)=>b.v-a.v).forEach((e,i)=>{ dp[e.t][grp].yards_rank=i+1; });
+  ["ypt_wr","ypt_te","ypt_rb","ypt_outside","ypt_slot"].forEach(key=>{
+    const arr=Object.entries(dp).filter(([t,o])=>o[key]!=null).map(([t,o])=>({t,v:o[key]}));
+    arr.sort((a,b)=>b.v-a.v).forEach((e,i)=>{ dp[e.t][key+'_rank']=i+1; });
   });
   wd.defPos=dp;
 
-  // ---- coverage-mix ----
+  // ---- coverage-schemes (season-to-date momentopname, sharpfootballanalysis.com) ----
   const cp={};
-  _rowsFor('def_profile_weekly',W).forEach(r=>{
-    const c=(cp[r.team]=cp[r.team]||{total:0,man:0,zone:0,box_sum:0,box_n:0,COVER_0:0,COVER_1:0,COVER_2:0,COVER_3:0,COVER_4:0,COVER_6:0,"2_MAN":0,COVER_9:0});
-    c.total+=n(r.total); c.man+=n(r.man); c.zone+=n(r.zone); c.box_sum+=n(r.box_sum); c.box_n+=n(r.box_n);
-    ["COVER_0","COVER_1","COVER_2","COVER_3","COVER_4","COVER_6","2_MAN","COVER_9"].forEach(k=>c[k]+=n(r[k]));
-  });
-  Object.values(cp).forEach(c=>{
-    const t=c.total||1; c.man_pct=c.man/t*100; c.zone_pct=c.zone/t*100;
-    c.box_avg=c.box_n?c.box_sum/c.box_n:null; c.labeled_plays=c.total;
-    ["COVER_0","COVER_1","COVER_2","COVER_3","COVER_4","COVER_6","2_MAN","COVER_9"].forEach(k=>c[k]=c[k]/t*100);
+  (D.def_profile_weekly||[]).filter(r=>r.week<W).forEach(r=>{
+    const cur=cp[r.team];
+    if(!cur || r.week>cur.week) cp[r.team]=r;
   });
   wd.covProfile=cp;
 
@@ -1064,20 +1058,19 @@ function defensePanel(team, wd){
 }
 
 function defenseProfilePanel(team, wd){
-  const p=wd.covProfile[team]; const ps=wd.defPos[team]||{};
-  if(!p && !Object.keys(ps).length) return `<div class="panel"><h2>${team} \u2014 defensie-profiel</h2><div class="empty">Geen data.</div></div>`;
+  const p=wd.covProfile[team]; const ps=wd.defPos[team];
+  if(!p && !ps) return `<div class="panel"><h2>${team} \u2014 defensie-profiel</h2><div class="empty">Geen data.</div></div>`;
   let cov='';
-  if(p) cov=`<div class="cov-block"><div class="cov-head">Coverage-mix <span class="dim">(${fmt(p.labeled_plays,0)} plays)</span></div>
-    ${coverageBar('Cover 1 (man)',p.COVER_1,'var(--red)')}${coverageBar('Cover 2',p.COVER_2,'var(--blue)')}${coverageBar('Cover 3',p.COVER_3,'var(--accent)')}${coverageBar('Cover 4',p.COVER_4,'#a371f7')}${coverageBar('Cover 6',p.COVER_6,'#56d4dd')}
-    <div class="cov-split"><span><b class="trend-down">${fmt(p.man_pct,0)}%</b> man</span><span><b class="blue-t">${fmt(p.zone_pct,0)}%</b> zone</span><span class="dim">box: ${fmt(p.box_avg,1)}</span></div></div>`;
-  function pr(label,grp){
-    const r=ps[grp]; if(!r) return `<tr><td>${label}</td><td colspan="3" class="dim">geen data</td></tr>`;
-    return `<tr><td>${label}</td><td>${fmt(r.yards_pg,0)}</td><td>${rankPill(r.yards_rank)}</td><td class="dim">rtg ${fmt(r.passer_rating,0)}</td></tr>`;
+  if(p) cov=`<div class="cov-block"><div class="cov-head">Coverage-mix <span class="dim">season-to-date, week ${p.week}</span></div>
+    ${coverageBar('Man coverage',p.man_pct,'var(--red)')}${coverageBar('Zone coverage',p.zone_pct,'var(--blue)')}${coverageBar('Middle closed',p.mof_closed_pct,'var(--accent)')}${coverageBar('Middle open',p.mof_open_pct,'#a371f7')}</div>`;
+  function pr(label,key){
+    const v=ps&&ps[key]; if(v==null) return `<tr><td>${label}</td><td colspan="2" class="dim">geen data</td></tr>`;
+    return `<tr><td>${label}</td><td>${fmt(v,1)}</td><td>${rankPill(ps[key+'_rank'])}</td></tr>`;
   }
   return `<div class="panel"><h2>${team} \u2014 defensie-profiel <span class="tag">coverage &amp; posities</span></h2>${cov}
-    <table><thead><tr><th>Coverage door</th><th>Yds/g</th><th>Rank</th><th>\u2014</th></tr></thead>
-    <tbody>${pr('Cornerbacks','CB')}${pr('Linebackers','LB')}${pr('Safeties','S')}</tbody></table>
-    <div class="note">Yds/g toegestaan door die groep · <span class="hint">#1\u201310</span> = staat veel toe. Cumulatief t/m gekozen week.</div></div>`;
+    <table><thead><tr><th>Yds/target toegestaan aan</th><th>YPT</th><th>Rank</th></tr></thead>
+    <tbody>${pr('Wide receivers','ypt_wr')}${pr('Tight ends','ypt_te')}${pr('Running backs','ypt_rb')}${pr('Outside','ypt_outside')}${pr('Slot','ypt_slot')}</tbody></table>
+    <div class="note">Yards per target toegestaan · <span class="hint">#1\u201310</span> = staat veel toe. Season-to-date momentopname (sharpfootballanalysis.com).</div></div>`;
 }
 
 function runDefensePanel(team, wd){
@@ -1091,12 +1084,12 @@ function runDefensePanel(team, wd){
 }
 
 function passDefensePanel(team, wd){
-  const ps=wd.defPos[team]||{};
+  const ps=wd.defPos[team];
   const td=wd.teamDef[team]||{};
-  if(!Object.keys(ps).length && !Object.keys(td).length) return '';
-  function grpRow(label,grp){
-    const r=ps[grp]; if(!r) return `<tr><td>${label}</td><td colspan="3" class="dim">geen data</td></tr>`;
-    return `<tr><td>${label}</td><td>${fmt(r.yards_pg,0)}</td><td>${rankPill(r.yards_rank)}</td><td class="dim">rtg ${fmt(r.passer_rating,0)}</td></tr>`;
+  if(!ps && !Object.keys(td).length) return '';
+  function grpRow(label,key){
+    const v=ps&&ps[key]; if(v==null) return `<tr><td>${label}</td><td colspan="2" class="dim">geen data</td></tr>`;
+    return `<tr><td>${label}</td><td>${fmt(v,1)}</td><td>${rankPill(ps[key+'_rank'])}</td></tr>`;
   }
   function posRow(label,pos){
     const r=td[pos]; if(!r) return `<tr><td>${label}</td><td colspan="3" class="dim">geen data</td></tr>`;
@@ -1106,9 +1099,9 @@ function passDefensePanel(team, wd){
     <table><thead><tr><th>Toegestaan aan</th><th>Yds/g</th><th>Rank</th><th>\u2014</th></tr></thead>
     <tbody>
       ${posRow('WR receiving','WR')}${posRow('TE receiving','TE')}${posRow('RB receiving','RB')}
-      ${grpRow('via Cornerbacks','CB')}${grpRow('via Linebackers','LB')}${grpRow('via Safeties','S')}
+      ${grpRow('YPT vs outside','ypt_outside')}${grpRow('YPT vs slot','ypt_slot')}
     </tbody></table>
-    <div class="note">Bovenste 3: yds/game toegestaan aan die aanvalspositie. Onderste 3: yds toegestaan dóór die verdedigende groep (rtg = passer rating tegen). <span class="hint">#1\u201310</span> = staat veel toe.</div></div>`;
+    <div class="note">Bovenste 3: yds/game toegestaan aan die aanvalspositie. Onderste 2: yards per target toegestaan, outside vs slot (sharpfootballanalysis.com). <span class="hint">#1\u201310</span> = staat veel toe.</div></div>`;
 }
 
 function vacatedPanel(team, week){
@@ -1165,7 +1158,8 @@ function buildSummaryText(){
     L.push(`\n  ${opp} verdediging staat toe (per game):`);
     if(d.WR) L.push(`    WR ${fmt(d.WR.rec_yds_pg,0)} yd (#${d.WR.rec_yds_rank}) | TE ${d.TE?fmt(d.TE.rec_yds_pg,0):'-'} yd | RB rush ${d.RB?fmt(d.RB.rush_yds_pg,0):'-'} yd`);
     const cov=wd.covProfile[opp];
-    if(cov) L.push(`    coverage: ${fmt(cov.man_pct,0)}% man / ${fmt(cov.zone_pct,0)}% zone, box ${fmt(cov.box_avg,1)}`);
+    const rd=wd.runDef[opp];
+    if(cov) L.push(`    coverage: ${fmt(cov.man_pct,0)}% man / ${fmt(cov.zone_pct,0)}% zone${rd?', box '+fmt(rd.box_avg,1):''}`);
     const outs=injuriesFor(tm,wk).filter(r=>r.status==='Out');
     if(outs.length) L.push(`  OUT: ${outs.map(o=>o.player+' ('+(o.pos||'?')+')').join(', ')}`);
   });
