@@ -505,6 +505,18 @@ function buildWeekData(W){
   });
   wd.covProfile=cp;
 
+  // ---- O-line (season-to-date momentopname, sharpfootballanalysis.com) ----
+  const ol={};
+  (D.oline_weekly||[]).filter(r=>r.week<W).forEach(r=>{
+    const cur=ol[r.team];
+    if(!cur || r.week>cur.week) ol[r.team]=r;
+  });
+  {
+    const arr=Object.entries(ol).filter(([t,o])=>o.ybc_per_rush!=null).map(([t,o])=>({t,v:o.ybc_per_rush}));
+    arr.sort((a,b)=>b.v-a.v).forEach((e,i)=>{ ol[e.t].ybc_rank=i+1; });
+  }
+  wd.oline=ol;
+
   // ---- speler vs coverage (+ competitiegemiddelde per coverage) ----
   const pc={}, cl={};
   _rowsFor('player_cov_weekly',W).forEach(r=>{
@@ -520,12 +532,10 @@ function buildWeekData(W){
   // ---- RB rushing ----
   const rr={};
   _rowsFor('rb_rush_weekly',W).forEach(r=>{
-    const p=(rr[r.player]=rr[r.player]||{carries:0,ybc:0,yac:0,broken:0,weeks:new Set()});
-    p.carries+=n(r.carries); p.ybc+=n(r.ybc); p.yac+=n(r.yac); p.broken+=n(r.broken); p.weeks.add(r._gw);
+    const p=(rr[r.player]=rr[r.player]||{carries:0,rush_yds:0,weeks:new Set()});
+    p.carries+=n(r.carries); p.rush_yds+=n(r.rush_yds); p.weeks.add(r._gw);
   });
-  Object.values(rr).forEach(p=>{
-    const g=p.weeks.size||1; p.games=g; p.ybc_att=p.carries?p.ybc/p.carries:0; p.yac_att=p.carries?p.yac/p.carries:0; p.broken_pg=p.broken/g;
-  });
+  Object.values(rr).forEach(p=>{ p.games=p.weeks.size||1; });
   wd.rbRush=rr;
 
   // ---- run-defense ----
@@ -1011,14 +1021,19 @@ function rushingPanel(team, uptoWeek, wd){
   let rows='';
   profs.forEach(p=>{
     const r=wd.rbRush[p.player]; if(!r||r.carries<5) return;
+    const ypc = r.carries ? r.rush_yds/r.carries : 0;
     rows+=`<tr><td class="player-name">${p.player}<span class="pos">${p.pos}</span></td>
-      <td>${fmt(r.carries,0)}</td><td>${fmt(r.ybc_att,1)}</td><td><b>${fmt(r.yac_att,1)}</b></td><td>${fmt(r.broken_pg,1)}</td></tr>`;
+      <td>${fmt(r.carries,0)}</td><td>${fmt(r.rush_yds,0)}</td><td><b>${fmt(ypc,1)}</b></td></tr>`;
   });
   if(!rows) return '';
-  return `<div class="panel"><h2>${team} \u2014 rushing detail <span class="tag">${wkLbl(uptoWeek)}</span></h2>
-    <table><thead><tr><th>Speler</th><th>Carries</th><th>YBC/att</th><th>YAC/att</th><th>Broken/g</th></tr></thead>
+  const ol=wd.oline[team];
+  const olNote = ol
+    ? `O-line (team) schept gemiddeld <b>${fmt(ol.ybc_per_rush,1)}</b> yards voor contact per rush (${rankPill(ol.ybc_rank)}) — per-speler YBC/YAC/gemiste tackles zijn nergens gratis beschikbaar.`
+    : `Yards voor/na contact en gemiste tackles per speler zijn nergens gratis beschikbaar.`;
+  return `<div class="panel"><h2>${team} — rushing detail <span class="tag">${wkLbl(uptoWeek)}</span></h2>
+    <table><thead><tr><th>Speler</th><th>Carries</th><th>Rush yds</th><th>Yds/carry</th></tr></thead>
     <tbody>${rows}</tbody></table>
-    <div class="note">YBC = yards vóór contact (blocking) · YAC = yards ná contact (back zelf) · Broken = gemiste tackles/game</div></div>`;
+    <div class="note">${olNote}</div></div>`;
 }
 
 function formationPanel(team, wd){
@@ -1521,11 +1536,11 @@ function playerDetailSections(team, player){
   // Rushing detail (RB)
   const rb = wd.rbRush[player];
   if(rb && rb.carries>=3){
+    const ypc = rb.carries ? rb.rush_yds/rb.carries : 0;
     html += `<div class="modal-section"><h3>Rushing detail</h3><div class="stat-grid">
       <div class="stat-cell"><div class="v">${fmt(rb.carries,0)}</div><div class="k">carries</div></div>
-      <div class="stat-cell"><div class="v">${fmt(rb.ybc_att,1)}</div><div class="k">YBC/att</div></div>
-      <div class="stat-cell"><div class="v">${fmt(rb.yac_att,1)}</div><div class="k">YAC/att</div></div>
-      <div class="stat-cell"><div class="v">${fmt(rb.broken_pg,1)}</div><div class="k">broken/g</div></div>
+      <div class="stat-cell"><div class="v">${fmt(rb.rush_yds,0)}</div><div class="k">rush yds</div></div>
+      <div class="stat-cell"><div class="v">${fmt(ypc,1)}</div><div class="k">yds/carry</div></div>
     </div></div>`;
   }
 

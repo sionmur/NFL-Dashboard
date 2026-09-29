@@ -57,9 +57,9 @@ ODDS
         odds-snapshot (als ODDS_API_KEY gezet is), een coverage-snapshot en
         herbouwt dashboard_data_<seizoen>.js. Logt naar weekly_update.log.
 
-  5. Alleen coverage-schemes/coverage-per-positie bijwerken
+  5. Alleen coverage-schemes/coverage-per-positie/O-line bijwerken
      python nfl_pipeline.py sharp
-        haalt alleen def_profile_weekly/def_pos_weekly vers op van
+        haalt alleen def_profile_weekly/def_pos_weekly/oline_weekly vers op van
         sharpfootballanalysis.com (season-to-date snapshot voor de huidige week).
 
 VEREIST:  pip install pandas      (pyarrow is optioneel: fallback voor FTN)
@@ -109,6 +109,7 @@ SCHEDULE_URL = "https://raw.githubusercontent.com/nflverse/nfldata/master/data/g
 SHARP_URLS = {
     "cov_scheme": "https://www.sharpfootballanalysis.com/stats-nfl/nfl-coverage-schemes/",
     "cov_pos":    "https://www.sharpfootballanalysis.com/stats-nfl/nfl-coverage-stats-by-position/",
+    "oline":      "https://www.sharpfootballanalysis.com/stats-nfl/nfl-offensive-line-stats/",
 }
 
 SKILL = {"QB", "RB", "FB", "WR", "TE"}
@@ -141,7 +142,7 @@ TEAM_NAME_TO_CODE = {
 # Tabellen die dit script niet kan maken (coverage-charting). Met --keep-from
 # worden ze uit het bestaande bestand overgenomen.
 NIET_AFLEIDBAAR = [
-    "player_cov_weekly", "def_profile_weekly", "def_pos_weekly",
+    "player_cov_weekly", "def_profile_weekly", "def_pos_weekly", "oline_weekly",
     "form_prod_weekly", "injuries", "vacated", "odds",
 ]
 
@@ -420,12 +421,16 @@ def _sharp_tabel(page, url):
 
 
 def bouw_sharp_dekking(week):
-    """Coverage-schemes (man/zone%) en coverage-per-positie (YPT toegestaan) als
-    season-to-date momentopname van sharpfootballanalysis.com.
+    """Coverage-schemes (man/zone%), coverage-per-positie (YPT toegestaan) en
+    O-line-stats (o.a. yards before contact per RB-rush) als season-to-date
+    momentopname van sharpfootballanalysis.com.
 
     nflverse's participation-dataset (de oorspronkelijke bron van def_profile_weekly
     /def_pos_weekly) verschijnt pas na afloop van het seizoen -- tijdens het seizoen
-    dus altijd leeg. Sharp geeft alleen season-to-date percentages, geen losse
+    dus altijd leeg. YBC/YAC/broken tackles per RB zitten sowieso niet in
+    play-by-play (zie rb_rush_weekly) -- Sharp's O-line-pagina geeft daar in elk
+    geval het TEAM-gemiddelde voor (geen per-speler-detail, dat is nergens gratis
+    te vinden). Sharp geeft alleen season-to-date percentages, geen losse
     week-increments: elke aanroep levert 1 momentopname-regel per team, getagd met
     de meegegeven week. Oudere weken moeten door de aanroeper bewaard blijven.
     Vereist Playwright (pip install playwright && playwright install chromium).
@@ -435,10 +440,10 @@ def bouw_sharp_dekking(week):
     except ImportError:
         print("  playwright niet geinstalleerd -- coverage-snapshot overgeslagen "
               "(pip install playwright && playwright install chromium)", file=sys.stderr)
-        return [], []
+        return [], [], []
 
-    print("coverage-schemes & coverage-per-positie (sharpfootballanalysis.com)...")
-    profiel, positie = [], []
+    print("coverage-schemes, coverage-per-positie & O-line-stats (sharpfootballanalysis.com)...")
+    profiel, positie, oline = [], [], []
     try:
         with sync_playwright() as p:
             browser = p.chromium.launch(headless=True)
@@ -460,26 +465,39 @@ def bouw_sharp_dekking(week):
                     "ypt_wr": f(c[1]), "ypt_te": f(c[2]), "ypt_rb": f(c[3]),
                     "ypt_outside": f(c[4]), "ypt_slot": f(c[5]),
                 })
+            for team, c in _sharp_tabel(page, SHARP_URLS["oline"]):
+                if len(c) < 6:
+                    continue
+                oline.append({
+                    "team": team, "week": week,
+                    "pressure_rate_allowed": f(c[1]),
+                    "pressure_rate_allowed_no_blitz": f(c[2]),
+                    "time_to_throw": f(c[3]),
+                    "ybc_per_rush": f(c[4]),
+                    "stuff_rate": f(c[5]),
+                })
             browser.close()
     except Exception as e:
         print(f"  sharpfootballanalysis.com mislukt: {e}", file=sys.stderr)
-        return [], []
+        return [], [], []
 
-    print(f"  coverage-schemes: {len(profiel)} teams | "
-          f"coverage-per-positie: {len(positie)} teams (week {week})")
-    return profiel, positie
+    print(f"  coverage-schemes: {len(profiel)} teams | coverage-per-positie: {len(positie)} teams "
+          f"| O-line: {len(oline)} teams (week {week})")
+    return profiel, positie, oline
 
 
-def voeg_sharp_snapshot_toe(oud_profiel, oud_positie, week):
+def voeg_sharp_snapshot_toe(oud_profiel, oud_positie, oud_oline, week):
     """Haalt de huidige week se momentopname op en zet die erbij, met vervanging
     van een eerdere opname van diezelfde week (bijv. bij een herrun dezelfde dag).
     Oudere weken (die Sharp niet meer teruggeeft) blijven staan."""
-    profiel, positie = bouw_sharp_dekking(week)
+    profiel, positie, oline = bouw_sharp_dekking(week)
     if profiel:
         oud_profiel = [r for r in oud_profiel if r.get("week") != week] + profiel
     if positie:
         oud_positie = [r for r in oud_positie if r.get("week") != week] + positie
-    return oud_profiel, oud_positie
+    if oline:
+        oud_oline = [r for r in oud_oline if r.get("week") != week] + oline
+    return oud_profiel, oud_positie, oud_oline
 
 
 def bouw_schedule(season):
@@ -1020,6 +1038,7 @@ def cmd_build(args):
         "player_cov_weekly": [],
         "def_profile_weekly": [],
         "def_pos_weekly": [],
+        "oline_weekly": [],
         "form_prod_weekly": [],
     }
     data.update(afgeleid)
@@ -1047,8 +1066,9 @@ def cmd_build(args):
     # laatste week waar echt spelersstatistieken voor zijn.
     snapshot_week = max((r["week"] for r in stats), default=None)
     if snapshot_week:
-        data["def_profile_weekly"], data["def_pos_weekly"] = voeg_sharp_snapshot_toe(
-            data.get("def_profile_weekly", []), data.get("def_pos_weekly", []), snapshot_week)
+        data["def_profile_weekly"], data["def_pos_weekly"], data["oline_weekly"] = voeg_sharp_snapshot_toe(
+            data.get("def_profile_weekly", []), data.get("def_pos_weekly", []),
+            data.get("oline_weekly", []), snapshot_week)
 
     # ---- odds ----
     if args.odds_json:
@@ -1180,8 +1200,9 @@ def cmd_injuries(args):
 
 
 def patch_sharp(season, out_path, week, backup=True):
-    """Haalt een verse coverage-snapshot op en patcht alleen def_profile_weekly
-    en def_pos_weekly in een bestaand dashboard_data_<jaar>.js."""
+    """Haalt een verse coverage-/O-line-snapshot op en patcht alleen
+    def_profile_weekly, def_pos_weekly en oline_weekly in een bestaand
+    dashboard_data_<jaar>.js."""
     out = Path(out_path)
     if not out.exists():
         print(f"{out} bestaat niet -- niks te patchen", file=sys.stderr)
@@ -1189,14 +1210,15 @@ def patch_sharp(season, out_path, week, backup=True):
     data = lees_bestaand(out)
     if not data:
         return False
-    profiel, positie = voeg_sharp_snapshot_toe(
-        data.get("def_profile_weekly", []), data.get("def_pos_weekly", []), week)
-    if not profiel and not positie:
-        print("geen verse coverage-data -- bestand ongewijzigd")
+    profiel, positie, oline = voeg_sharp_snapshot_toe(
+        data.get("def_profile_weekly", []), data.get("def_pos_weekly", []),
+        data.get("oline_weekly", []), week)
+    if not profiel and not positie and not oline:
+        print("geen verse coverage-/O-line-data -- bestand ongewijzigd")
         return False
-    data["def_profile_weekly"], data["def_pos_weekly"] = profiel, positie
+    data["def_profile_weekly"], data["def_pos_weekly"], data["oline_weekly"] = profiel, positie, oline
     schrijf_seizoen(out, season, data, backup=backup)
-    print(f"geschreven: {out.name} -- coverage-snapshot week {week} "
+    print(f"geschreven: {out.name} -- coverage-/O-line-snapshot week {week} "
           f"({out.stat().st_size/1024:.0f} KB)")
     return True
 
@@ -1343,7 +1365,7 @@ def main():
     pi.set_defaults(func=cmd_injuries)
 
     ps = sub.add_parser("sharp",
-                        help="alleen coverage-schemes/coverage-per-positie bijwerken "
+                        help="alleen coverage-schemes/coverage-per-positie/O-line bijwerken "
                              "(sharpfootballanalysis.com, vereist playwright)")
     ps.add_argument("--season", type=int, default=None,
                     help="seizoensjaar, standaard huidig")
